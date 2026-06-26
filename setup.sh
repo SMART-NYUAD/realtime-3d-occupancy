@@ -19,6 +19,21 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 echo "==> Installing remaining requirements"
 pip install -r requirements.txt
 
+# ---- Expose system PyGObject (gi) + GStreamer to the venv --------------------
+# NTP-synchronized RTSP capture (src/gst_stream.py) needs PyGObject, which ships
+# only as a system apt package (no working pip wheel on Jetson). A .pth makes the
+# venv import it; the path is APPENDED, so the venv's own numpy/opencv still win.
+# If the import check fails, install the system packages it names, then re-run.
+echo "==> Linking system gi/GStreamer into the venv"
+SITE=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+echo "/usr/lib/python3/dist-packages" > "$SITE/system_gi.pth"
+python - <<'PY' || echo "  MISSING: sudo apt install -y python3-gi gstreamer1.0-libav \
+gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad"
+import gi; gi.require_version("Gst", "1.0")
+from gi.repository import Gst; Gst.init(None)
+print("   gi/GStreamer OK:", Gst.version_string())
+PY
+
 echo
 echo "==> Verifying"
 python - <<'PY'

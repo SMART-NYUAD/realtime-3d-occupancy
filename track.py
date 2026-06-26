@@ -45,6 +45,14 @@ def main():
     cams = list_cameras(cfg)
     floor = load_plan(cfg)
 
+    # NTP-synchronized capture: align all cameras to a common capture instant so a
+    # laggy stream doesn't split a moving person into a second track. RTSP only.
+    scfg = cfg.get("sync", {})
+    sync_on = scfg.get("enabled", False)
+    if sync_on and not all(str(c["source"]).startswith("rtsp://") for c in cams):
+        print("[sync] disabled: needs all-RTSP sources.")
+        sync_on = False
+
     streams, trackers, homs, colors = {}, {}, {}, {}
     for i, cam in enumerate(cams):
         name = cam["name"]
@@ -60,9 +68,20 @@ def main():
         else:
             homs[name] = None
             print(f"[{name}] no homography ({hp}) — run: python calibrate.py --camera {name}")
-        print(f"[{name}] connecting to {cam['source']} ...")
-        streams[name] = CameraStream(cam)
+        if not sync_on:
+            print(f"[{name}] connecting to {cam['source']} ...")
+            streams[name] = CameraStream(cam)
         trackers[name] = PersonTracker(cfg)   # separate tracker => per-camera IDs
+
+    group = None
+    if sync_on:
+        from sync import SyncGroup
+        print(f"[sync] NTP-synced capture (decoder={scfg.get('decoder', 'sw')}, "
+              f"tol={int(scfg.get('tol_ms', 75))}ms) connecting all cameras ...")
+        group = SyncGroup(cams, decoder=scfg.get("decoder", "sw"),
+                          tol_s=scfg.get("tol_ms", 75) / 1000.0,
+                          buffer_sec=scfg.get("buffer_sec", 1.0),
+                          latency_ms=scfg.get("latency_ms", 100))
 
     show_cams = cfg["output"].get("show_camera_windows", True)
     draw_trails = cfg["output"]["draw_track_trails"]
@@ -82,9 +101,14 @@ def main():
     print("\nTracking all cameras... " + ("(headless)" if headless else "press 'q' to quit."))
     while True:
         all_people = []
+        synced = None
+        if sync_on:
+            _t, synced = group.next_aligned()
+            if not synced:
+                continue
         for cam in cams:
             name = cam["name"]
-            frame = streams[name].read()
+            frame = synced.get(name) if sync_on else streams[name].read()
             if frame is None:
                 continue
             people = trackers[name].track(frame)
@@ -173,6 +197,8 @@ def main():
             if (cv2.waitKey(1) & 0xFF) == ord("q"):
                 break
 
+    if group is not None:
+        group.release()
     for s in streams.values():
         s.release()
     cv2.destroyAllWindows()

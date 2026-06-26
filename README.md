@@ -94,6 +94,29 @@ Opens two windows: the annotated **camera** view and the **top-down floor map**.
 Press `q` to quit. Set `output.show_window: false` in `config.yaml` to run
 headless and stream coordinates to stdout instead.
 
+## Synchronisation (NTP) — why one person isn't two
+
+Cameras have different end-to-end latency (measured here: ~120 ms on one camera,
+~430 ms on two others). If you fuse "whatever each camera last sent", a moving
+person is at different places in each camera's *stale* frame; when those differ
+by more than `fusion.merge_distance_m` they stop merging and you get **two dots
+for one person**.
+
+Fix: the cameras are **chrony/NTP clients of this host**, so every frame carries
+an RTCP capture timestamp on a clock shared across cameras. With `sync.enabled:
+true`, `track.py` buffers a second of timestamped frames per camera and, each
+step, lines them all up to a **common capture instant** (the measured ~300 ms
+skew drops to ~20 ms) before detecting and fusing.
+
+- RTSP/H.264 sources only; tune in the `sync:` block of `config.yaml`.
+- Needs system **PyGObject + GStreamer** (`setup.sh` links them into the venv;
+  it prints the `apt` packages to install if they're missing).
+- `decoder: sw` (openh264) is the portable default; `hw`/`nvdec` use Jetson NVDEC.
+- Verify the live skew yourself: `python src/gst_stream.py config.yaml`.
+
+This addresses lag-induced duplicates. Duplicates from a camera that *can't see
+your feet* (it places you wrong, not late) are a separate, foot-point problem.
+
 ## Accuracy notes (monocular limits)
 
 - Floor (X, Y) is solid when feet are visible and the floor is flat.
@@ -112,7 +135,9 @@ headless and stream coordinates to stdout instead.
 | `calibrate.py` | camera↔map point matching → homography |
 | `track.py` | main real-time loop |
 | `topdown.py` | preview/export the top-down map (PNG) |
-| `src/capture.py` | RTSP / USB / CSI / file camera capture |
+| `src/capture.py` | RTSP / USB / CSI / file camera capture (cv2) |
+| `src/gst_stream.py` | NTP-synced RTSP capture (GStreamer, timestamped frames) |
+| `src/sync.py` | align cameras to a common capture instant |
 | `src/detector.py` | YOLO person detect + ByteTrack |
 | `src/geometry.py` | image→world homography math |
 | `src/plan.py` | shared world↔pixel frame + `load_plan(cfg)` factory |

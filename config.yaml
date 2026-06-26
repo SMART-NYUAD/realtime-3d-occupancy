@@ -65,6 +65,18 @@ floorplan:
   # calibrations agree. Built up by calibrate.py; snap to existing ones to share.
   reference_points_file: "reference_points.json"
 
+# NTP-synchronized capture. The cameras are chrony/NTP clients of this host, so
+# each frame's RTCP capture timestamp is a clock shared across cameras. With this
+# on, track.py aligns all cameras to a common capture instant instead of fusing
+# whatever each one last buffered — so a laggy stream can't split a moving person
+# into a second dot. RTSP/H.264 only; needs system gi+GStreamer (see setup.sh).
+sync:
+  enabled: true
+  decoder: sw             # sw=openh264 (portable) | hw=nvv4l2decoder | nvdec=nvh264dec
+  tol_ms: 75              # a camera's frame must be within this of the target instant
+  buffer_sec: 1.0         # per-camera frame history kept for time-alignment
+  latency_ms: 100         # rtspsrc jitter buffer
+
 fusion:
   enabled: true
   merge_distance_m: 1.2   # detections this close (across cameras) = same person
