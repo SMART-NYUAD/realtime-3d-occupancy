@@ -32,8 +32,9 @@ _AXIS = {"x": 0, "y": 1, "z": 2}
 
 class PointCloudPlan(PlanBase):
     def __init__(self, las_path, px_per_m=50, margin_m=0.5, up_axis="auto",
-                 color_mode="height", ceiling_trim_m=0.4, clip_percentile=0.2,
-                 flip_x=False, flip_y=False, point_px=1, cache=True):
+                 color_mode="rgb", ceiling_trim_m=0.4, clip_percentile=0.2,
+                 flip_x=False, flip_y=False, point_px=1, rgb_autocontrast=True,
+                 cache=True):
         self.px_per_m = float(px_per_m)
         self.margin_m = float(margin_m)
         self.vertices = np.empty((0, 2), np.float32)   # no corner snapping for a cloud
@@ -41,7 +42,8 @@ class PointCloudPlan(PlanBase):
         params = dict(px_per_m=self.px_per_m, margin_m=self.margin_m,
                       up_axis=str(up_axis).lower(), color_mode=color_mode,
                       ceiling_trim_m=ceiling_trim_m, clip_percentile=clip_percentile,
-                      flip_x=bool(flip_x), flip_y=bool(flip_y), point_px=int(point_px))
+                      flip_x=bool(flip_x), flip_y=bool(flip_y), point_px=int(point_px),
+                      rgb_autocontrast=bool(rgb_autocontrast))
 
         cached = self._load_cache(las_path, params) if cache else None
         if cached is not None:
@@ -106,15 +108,19 @@ class PointCloudPlan(PlanBase):
             trim = float(p["ceiling_trim_m"])
             if trim > 0 and len(h):
                 sel = h <= (h.max() - trim)     # drop the ceiling so furniture/floor show
-            order = np.argsort(h[sel])          # topmost remaining point wins each pixel
-            fl = flat[sel][order]
-            bg = np.zeros((H * W, 3), np.uint8)
-            bg[fl] = rgb[sel][order]
-            written = np.zeros(H * W, bool)
-            written[fl] = True
-            bg[~written] = 25
-            bg = bg.reshape(H, W, 3)
-        else:                                   # height colormap (default, RGB-independent)
+            fl = flat[sel]
+            col = rgb[sel].astype(np.float64)   # (M,3) in R,G,B order
+            npix = H * W
+            cnt = np.bincount(fl, minlength=npix).astype(np.float64)
+            written = cnt > 0
+            bg = np.full((npix, 3), 25.0)       # BGR for OpenCV
+            for c_out, c_in in ((0, 2), (1, 1), (2, 0)):   # B<-blue, G<-green, R<-red
+                s = np.bincount(fl, weights=col[:, c_in], minlength=npix)
+                bg[written, c_out] = s[written] / cnt[written]   # mean colour per pixel
+            if p["rgb_autocontrast"]:
+                bg = self._autocontrast(bg, written)             # lift the flat indoor greys
+            bg = bg.clip(0, 255).astype(np.uint8).reshape(H, W, 3)
+        else:                                   # height colormap (RGB-independent)
             order = np.argsort(h)               # topmost point wins each pixel
             himg = np.full(H * W, -np.inf)
             himg[flat[order]] = h[order]
@@ -134,6 +140,20 @@ class PointCloudPlan(PlanBase):
         print(f"[pointcloud] {os.path.basename(las_path)}: built top-down map "
               f"{self.width_m:.2f} x {self.height_m:.2f} m, {W}x{H}px "
               f"(up={self.up_axis}, mode={p['color_mode']}, {int(keep.sum())} pts)")
+
+    @staticmethod
+    def _autocontrast(bg, written, lo=1.0, hi=99.0):
+        """Stretch the [lo, hi] luminance percentiles to 0..255, applying the SAME
+        affine to all channels so colour balance (and 'realness') is preserved."""
+        if not written.any():
+            return bg
+        lum = bg[written].mean(axis=1)
+        a, b = np.percentile(lum, [lo, hi])
+        if b - a < 1e-6:
+            return bg
+        out = bg.copy()
+        out[written] = (bg[written] - a) * (255.0 / (b - a))
+        return out
 
     @staticmethod
     def _detect_up_axis(pts, slab_m=0.2):

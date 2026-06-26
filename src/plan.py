@@ -92,11 +92,12 @@ def load_plan(cfg):
             fpc.get("pointcloud_file", "smart_lab.las"),
             px_per_m=px_per_m, margin_m=margin_m,
             up_axis=fpc.get("up_axis", "auto"),
-            color_mode=fpc.get("color_mode", "height"),
+            color_mode=fpc.get("color_mode", "rgb"),
             ceiling_trim_m=fpc.get("ceiling_trim_m", 0.4),
             clip_percentile=fpc.get("clip_percentile", 0.2),
             flip_x=fpc.get("flip_x", False),
             flip_y=fpc.get("flip_y", False),
+            rgb_autocontrast=fpc.get("rgb_autocontrast", True),
         )
     if source == "dxf":
         from floorplan import Floorplan

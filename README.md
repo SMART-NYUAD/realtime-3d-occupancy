@@ -43,16 +43,17 @@ Two sources can provide that map (`floorplan.source` in `config.yaml`):
 
 - **`pointcloud`** (default) — a top-down view rendered from the lab scan
   `smart_lab.las`. The scan is Y-up (floor = X-Z plane), so it's projected
-  straight down onto its floor plane and shaded by height. This is the
-  up-to-date reference.
+  straight down onto its floor plane in its **true scan colour** (a clean
+  mean-colour orthophoto; `color_mode: height` shades by height instead). This
+  is the up-to-date reference.
 - **`dxf`** — the legacy BIM plan `SMART-floorplans.dxf`. Kept as a fallback;
   being retired because it's out of date.
 
 Preview the map (and warm its render cache) before calibrating:
 
 ```bash
-python topdown.py --show              # writes topdown.png
-python topdown.py --mode rgb --show   # true-colour instead of height shading
+python topdown.py --show               # writes topdown.png (true colour)
+python topdown.py --mode height --show # height-shaded instead of true colour
 ```
 
 > ⚠️ The two sources are **different frames** (origin, orientation and up-axis
