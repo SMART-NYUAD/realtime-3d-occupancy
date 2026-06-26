@@ -21,7 +21,7 @@ import cv2
 import yaml
 
 sys.path.insert(0, "src")
-from floorplan import Floorplan        # noqa: E402
+from plan import load_plan             # noqa: E402
 
 ST = {"pts": [], "cursor": None, "snapped": False, "snap_on": True, "fp": None}
 SNAP_M = 0.15
@@ -47,11 +47,10 @@ def main():
     args = ap.parse_args()
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
-    fpc = cfg["floorplan"]
-    fp = Floorplan(fpc["file"], px_per_m=fpc["px_per_m"], margin_m=fpc["margin_m"])
+    fp = load_plan(cfg)
     ST["fp"] = fp
-    print(f"Floorplan: {fp.width_m:.2f} x {fp.height_m:.2f} m, "
-          f"{len(fp.vertices)} BIM vertices for snapping")
+    print(f"Map: {fp.width_m:.2f} x {fp.height_m:.2f} m, "
+          f"{len(fp.vertices)} snap vertices")
 
     win = "MEASURE (left=add, right=undo, c=clear, n=new, s=snap, q=quit)"
     cv2.namedWindow(win)

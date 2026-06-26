@@ -1,17 +1,14 @@
 """Load a DXF floorplan, render it as a top-down map, and map world<->pixels.
 
-World frame (shared by every camera):
-  - units: meters
-  - origin (0,0): bottom-left corner of the floorplan bounding box
-  - +X to the right, +Y "up" (away). Z is not modeled (flat floor).
-
-The same world_to_px transform draws the floorplan AND places tracked people,
-so a person's (X,Y) in meters always lands in the right spot on the map.
+World frame (shared by every camera) and the world<->pixel transforms live in
+plan.PlanBase; this class just rasterizes the DXF into that frame. See plan.py.
 """
 import math
 import cv2
 import numpy as np
 import ezdxf
+
+from plan import PlanBase
 
 
 def _arc_points(cx, cy, r, a0_deg, a1_deg, step_deg=6.0):
@@ -25,7 +22,7 @@ def _arc_points(cx, cy, r, a0_deg, a1_deg, step_deg=6.0):
     return pts
 
 
-class Floorplan:
+class Floorplan(PlanBase):
     def __init__(self, dxf_path, px_per_m=50, margin_m=0.5, line_color=(180, 180, 180)):
         self.px_per_m = float(px_per_m)
         self.margin_m = float(margin_m)
@@ -72,54 +69,5 @@ class Floorplan:
         self._bg = bg
         self.vertices = np.array(verts, dtype=np.float32)   # (N, 2) world meters
 
-    def snap(self, wx, wy, tol_m=0.15):
-        """Nearest DXF vertex to (wx, wy) within tol_m, else the point itself."""
-        if len(self.vertices) == 0:
-            return (wx, wy), False
-        d = np.hypot(self.vertices[:, 0] - wx, self.vertices[:, 1] - wy)
-        i = int(np.argmin(d))
-        if d[i] <= tol_m:
-            return (float(self.vertices[i, 0]), float(self.vertices[i, 1])), True
-        return (wx, wy), False
-
-    # ---- coordinate transforms ----------------------------------------------
-    def world_to_px(self, wx, wy):
-        """world meters (origin at bbox min corner) -> canvas pixel."""
-        px = int((wx + self.margin_m) * self.px_per_m)
-        py = int(self.canvas_h - (wy + self.margin_m) * self.px_per_m)
-        return px, py
-
-    def px_to_world(self, px, py):
-        """canvas pixel -> world meters (origin at bbox min corner)."""
-        wx = px / self.px_per_m - self.margin_m
-        wy = (self.canvas_h - py) / self.px_per_m - self.margin_m
-        return wx, wy
-
-    def in_bounds(self, wx, wy, tol=1.0):
-        """True if a world point is inside the floorplan (+/- tol meters)."""
-        return (-tol <= wx <= self.width_m + tol and
-                -tol <= wy <= self.height_m + tol)
-
-    # ---- rendering -----------------------------------------------------------
-    def background(self):
-        return self._bg.copy()
-
-    def render(self, people, trails=None, color_fn=None):
-        canvas = self._bg.copy()
-        if trails:
-            for tid, pts in trails.items():
-                col = color_fn(tid) if color_fn else (0, 200, 255)
-                for i in range(1, len(pts)):
-                    if pts[i - 1] is None or pts[i] is None:
-                        continue
-                    cv2.line(canvas, self.world_to_px(*pts[i - 1]),
-                             self.world_to_px(*pts[i]), col, 2, cv2.LINE_AA)
-        for p in people:
-            if p.get("world") is None:
-                continue
-            col = color_fn(p["id"]) if color_fn else (0, 200, 255)
-            px, py = self.world_to_px(*p["world"])
-            cv2.circle(canvas, (px, py), 7, col, -1, cv2.LINE_AA)
-            cv2.putText(canvas, str(p["id"]), (px + 9, py),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)
-        return canvas
+    # snap (to DXF corners), world<->px transforms, in_bounds, background and
+    # render are all inherited from plan.PlanBase.

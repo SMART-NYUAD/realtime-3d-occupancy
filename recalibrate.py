@@ -34,7 +34,7 @@ from capture import list_cameras                               # noqa: E402
 from stream import CameraStream                                # noqa: E402
 from detector import PersonTracker                             # noqa: E402
 from geometry import compute_homography, image_to_floor, foot_point  # noqa: E402
-from floorplan import Floorplan                                # noqa: E402
+from plan import load_plan                                     # noqa: E402
 
 CAM_COLORS = [(0, 200, 255), (0, 255, 0), (255, 120, 0),
               (255, 0, 255), (0, 165, 255), (200, 200, 0)]
@@ -181,7 +181,7 @@ def main():
 
     cams = list_cameras(cfg)
     fpc = cfg["floorplan"]
-    fp = Floorplan(fpc["file"], px_per_m=fpc["px_per_m"], margin_m=fpc["margin_m"])
+    fp = load_plan(cfg)
     refs_path = fpc.get("reference_points_file", "reference_points.json")
     S["refs"] = load_refs(refs_path)
     S["next_id"] = max(S["refs"], default=0)

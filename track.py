@@ -24,7 +24,7 @@ from stream import CameraStream                                # noqa: E402
 from detector import PersonTracker                             # noqa: E402
 from geometry import load_homography, image_to_floor, foot_point  # noqa: E402
 from visualizer import draw_camera_view                        # noqa: E402
-from floorplan import Floorplan                                # noqa: E402
+from plan import load_plan                                     # noqa: E402
 from fusion import Fusion                                      # noqa: E402
 
 # one distinct color per camera so you can see which camera sees whom
@@ -43,8 +43,7 @@ def main():
         cfg = yaml.safe_load(f)
 
     cams = list_cameras(cfg)
-    fpc = cfg["floorplan"]
-    floor = Floorplan(fpc["file"], px_per_m=fpc["px_per_m"], margin_m=fpc["margin_m"])
+    floor = load_plan(cfg)
 
     streams, trackers, homs, colors = {}, {}, {}, {}
     for i, cam in enumerate(cams):

@@ -11,3 +11,7 @@ __pycache__/
 # OS / editor cruft
 .DS_Store
 *.swp
+
+# Cached top-down render of the point cloud (regenerated from the .las)
+*.topdown.npz
+topdown.png

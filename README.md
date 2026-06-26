@@ -34,9 +34,31 @@ source .venv/bin/activate
 `setup.sh` creates a venv and installs CUDA PyTorch (Jetson wheel) + Ultralytics
 YOLO + OpenCV.
 
-The **world frame is the DXF floorplan** (`SMART-floorplans.dxf`), in meters,
-origin at the plan's bottom-left corner. Every camera calibrates into this same
-frame, so positions are consistent across all 6 cameras.
+## The world frame (top-down map)
+
+Every camera calibrates into ONE shared **top-down map**, in meters, origin at
+the map's bottom-left corner — so positions are consistent across all cameras.
+
+Two sources can provide that map (`floorplan.source` in `config.yaml`):
+
+- **`pointcloud`** (default) — a top-down view rendered from the lab scan
+  `smart_lab.las`. The scan is Y-up (floor = X-Z plane), so it's projected
+  straight down onto its floor plane and shaded by height. This is the
+  up-to-date reference.
+- **`dxf`** — the legacy BIM plan `SMART-floorplans.dxf`. Kept as a fallback;
+  being retired because it's out of date.
+
+Preview the map (and warm its render cache) before calibrating:
+
+```bash
+python topdown.py --show              # writes topdown.png
+python topdown.py --mode rgb --show   # true-colour instead of height shading
+```
+
+> ⚠️ The two sources are **different frames** (origin, orientation and up-axis
+> all differ), so a homography or reference point made against one does **not**
+> transfer to the other. After switching `source`, **recalibrate every camera**
+> (and start a fresh `reference_points.json`).
 
 ## 1. Configure the camera
 
@@ -58,7 +80,9 @@ Two windows open — the **camera** and the **floorplan**:
   door edges, floor marks).
 - **ENTER** to finish. Saves the homography and prints reprojection error (< 0.3 m good).
 
-No tape-measure needed — the floorplan's known scale supplies the meters.
+No tape-measure needed — the map's known scale (point cloud or DXF) supplies the
+meters. On the point-cloud map, pick spots you can also identify in the camera:
+floor/wall corners, bench ends, equipment, the ceiling-beam grid.
 
 ## 3. Run real-time tracking
 
@@ -83,11 +107,14 @@ headless and stream coordinates to stdout instead.
 
 | file | role |
 |------|------|
-| `config.yaml` | all settings |
-| `calibrate.py` | camera↔floorplan point matching → homography |
+| `config.yaml` | all settings (incl. `floorplan.source`) |
+| `calibrate.py` | camera↔map point matching → homography |
 | `track.py` | main real-time loop |
+| `topdown.py` | preview/export the top-down map (PNG) |
 | `src/capture.py` | RTSP / USB / CSI / file camera capture |
 | `src/detector.py` | YOLO person detect + ByteTrack |
 | `src/geometry.py` | image→world homography math |
-| `src/floorplan.py` | DXF floorplan render + world↔pixel mapping |
+| `src/plan.py` | shared world↔pixel frame + `load_plan(cfg)` factory |
+| `src/pointcloud_plan.py` | top-down map rendered from the `.las` scan |
+| `src/floorplan.py` | DXF floorplan render (legacy `source: dxf`) |
 | `src/visualizer.py` | annotated camera-view overlay |

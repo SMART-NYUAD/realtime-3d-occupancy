@@ -38,11 +38,28 @@ detector:
   tracker: "bytetrack.yaml"   # ByteTrack gives stable IDs across frames
 
 floorplan:
-  # DXF architectural plan. World frame = this plan, in meters, origin at the
-  # bbox min corner. All cameras calibrate into this same frame.
-  file: "SMART-floorplans.dxf"
+  # The top-down map = the shared world frame (meters, origin at the bbox min
+  # corner). Every camera calibrates into this same frame.
+  #   source: pointcloud -> render a top-down view of the .las lab scan (current)
+  #           dxf        -> rasterize the DXF/BIM plan (legacy; being retired)
+  # NOTE: the two frames differ (origin/orientation/up-axis), so homographies and
+  # reference points do NOT transfer between them — recalibrate after switching.
+  source: pointcloud
   px_per_m: 50          # resolution of the top-down map canvas
   margin_m: 0.5         # blank border around the plan (meters)
+
+  # --- source: dxf ---
+  file: "SMART-floorplans.dxf"
+
+  # --- source: pointcloud ---
+  pointcloud_file: "smart_lab.las"
+  up_axis: auto         # vertical axis: auto | x | y | z (this scan is y-up)
+  color_mode: height    # height = colour by height (robust) | rgb = true colour
+  ceiling_trim_m: 0.4   # rgb mode: drop the top N m so the ceiling doesn't hide the floor
+  clip_percentile: 0.2  # trim this %% of stray points off each footprint edge
+  flip_x: false         # mirror the map's X / Y if its orientation feels wrong
+  flip_y: false
+
   # Shared floor reference points (world meters) reused across cameras so their
   # calibrations agree. Built up by calibrate.py; snap to existing ones to share.
   reference_points_file: "reference_points.json"
