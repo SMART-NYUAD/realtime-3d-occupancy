@@ -1,0 +1,13 @@
+# Python virtual environment (large; recreate with ./setup.sh)
+.venv/
+
+# Python caches / build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# OS / editor cruft
+.DS_Store
+*.swp

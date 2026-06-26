@@ -1,0 +1,9 @@
+# Core deps. On Jetson Thor (JetPack R39), torch/torchvision should come from
+# NVIDIA's Jetson wheel index for CUDA support — see setup.sh. ultralytics
+# pulls in numpy/opencv as needed.
+ultralytics>=8.3.0
+lap>=0.5.12
+PyYAML>=6.0
+numpy>=1.24
+opencv-python>=4.8
+ezdxf>=1.1            # read the DXF floorplan

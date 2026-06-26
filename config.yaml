@@ -1,0 +1,62 @@
+# ============================================================
+# people_tracker_3d configuration  (multi-camera)
+# ============================================================
+
+# Every camera maps people into the SAME floorplan frame via its own
+# homography. Add/remove cameras here; calibrate each with:
+#   python calibrate.py --camera <name>
+cameras:
+  - name: yi01
+    source: "rtsp://192.168.50.72/ch0_0.h264"
+    homography_file: "yi01_homography.npy"
+  - name: yi04
+    source: "rtsp://192.168.50.198/ch0_0.h264"
+    homography_file: "yi04_homography.npy"
+  - name: yi05
+    source: "rtsp://192.168.50.68/ch0_0.h264"
+    homography_file: "yi05_homography.npy"
+
+# Defaults applied to every camera (override per-camera by adding the key above).
+camera_defaults:
+  # source forms: "rtsp://.../ch0_0.h264" | "usb:0" | "csi:0" | "/path/video.mp4"
+  width: 1280
+  height: 720
+  fps: 30
+  # RTSP only: Jetson GStreamer hardware H.264 decode (lower CPU). false = FFMPEG.
+  rtsp_hw_decode: false
+  # CSI only:
+  csi_sensor_width: 1920
+  csi_sensor_height: 1080
+  flip_method: 0
+
+detector:
+  model: "yolo11n.pt"     # auto-downloaded. n=fast, s/m/l=more accurate
+  conf: 0.35              # min confidence for a detection
+  iou: 0.5
+  imgsz: 640
+  device: "cuda:0"        # "cuda:0" on Thor GPU, or "cpu"
+  tracker: "bytetrack.yaml"   # ByteTrack gives stable IDs across frames
+
+floorplan:
+  # DXF architectural plan. World frame = this plan, in meters, origin at the
+  # bbox min corner. All cameras calibrate into this same frame.
+  file: "SMART-floorplans.dxf"
+  px_per_m: 50          # resolution of the top-down map canvas
+  margin_m: 0.5         # blank border around the plan (meters)
+  # Shared floor reference points (world meters) reused across cameras so their
+  # calibrations agree. Built up by calibrate.py; snap to existing ones to share.
+  reference_points_file: "reference_points.json"
+
+fusion:
+  enabled: true
+  merge_distance_m: 1.2   # detections this close (across cameras) = same person
+  match_gate_m: 1.8       # max a person can move between frames to keep its ID
+  max_age_s: 1.5          # keep a global track this long while unseen (occlusion)
+  smoothing: 0.5          # position EMA: higher = snappier, lower = smoother
+  show_raw_dots: false    # also draw faint per-camera dots behind fused markers
+
+output:
+  show_window: true
+  show_camera_windows: true  # show each camera's annotated video too
+  draw_track_trails: false   # true = draw movement path lines; false = dots only
+  trail_length: 30
