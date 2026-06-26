@@ -58,7 +58,7 @@ floorplan:
   rgb_autocontrast: true # rgb mode: stretch the flat indoor greys for visibility
   ceiling_trim_m: 0.4   # rgb mode: drop the top N m so the ceiling doesn't hide the floor
   clip_percentile: 0.2  # trim this %% of stray points off each footprint edge
-  flip_x: false         # mirror the map's X / Y if its orientation feels wrong
+  flip_x: true          # mirror the map's X / Y if its orientation feels wrong
   flip_y: false
 
   # Shared floor reference points (world meters) reused across cameras so their
