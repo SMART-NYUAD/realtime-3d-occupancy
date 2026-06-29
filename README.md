@@ -94,6 +94,11 @@ Opens two windows: the annotated **camera** view and the **top-down floor map**.
 Press `q` to quit. Set `output.show_window: false` in `config.yaml` to run
 headless and stream coordinates to stdout instead.
 
+To publish positions to MQTT, set `output.mqtt.enabled: true` in `config.yaml`
+and fill in the broker settings. The tracker publishes TAC-B-style `position`
+messages to `output.mqtt.topic`, under `smx/device/...` by default, so existing
+subscribers on `smx/device/#` can consume them.
+
 ## Synchronisation (NTP) — why one person isn't two
 
 Cameras have different end-to-end latency (measured here: ~120 ms on one camera,
@@ -115,13 +120,47 @@ skew drops to ~20 ms) before detecting and fusing.
 - Verify the live skew yourself: `python src/gst_stream.py config.yaml`.
 
 This addresses lag-induced duplicates. Duplicates from a camera that *can't see
-your feet* (it places you wrong, not late) are a separate, foot-point problem.
+your feet* (it places you wrong, not late) are a separate, foot-point problem —
+see **Ground-plane blob intersection** below.
+
+## Ground-plane blob intersection — why one person isn't two (the other half)
+
+The single foot point (bbox bottom-center through the homography) is exact only
+when the feet are visible. When they're occluded (behind a desk) or clipped
+(below the frame), the box bottom sits *above* the real feet, so that camera
+places the person too far away. If the gap exceeds `fusion.merge_distance_m`, the
+person stops merging and you get **two dots** — even with perfect sync.
+
+The fix (`fusion.use_blob: true`, on by default) projects each detection's whole
+bounding box to a **floor trapezoid of foot-point uncertainty** instead of one
+point, and puts the person where the cameras' trapezoids **overlap**:
+
+```
+        camera that SEES the feet           camera that CAN'T (occluded/clipped)
+        ─────────────────────────           ────────────────────────────────────
+        short trapezoid at the feet         long trapezoid reaching to the camera
+                    ╲   ╱                        the feet are "somewhere in here"
+                     ╲ ╱   ── intersection ──▶  ◀ collapses onto the true feet
+```
+
+Because occlusion only ever makes the foot look *too far*, the trapezoid reaches
+mostly toward the camera (tunable in the `fusion:` block: `blob_near_frac`,
+`blob_body_aspect`, `blob_clip_inflate`). Two detections merge when their
+trapezoids overlap — not only when their foot points are close — which is what
+actually rejoins the split. Set `fusion.show_blobs: true` to draw the trapezoids
+and their intersection on the top-down map. Trapezoids that don't overlap (e.g.
+calibration error) fall back to the old point-mean, so it never does harm.
+
+Limits: very heavy occlusion *near the horizon* (a few visible pixels mapping to
+many meters) can drift beyond `blob_merge_gate_m` and still split — no worse than
+before. See `src/groundblob.py`.
 
 ## Accuracy notes (monocular limits)
 
 - Floor (X, Y) is solid when feet are visible and the floor is flat.
-- If feet are occluded (behind a desk), the estimate drifts — the box bottom is
-  no longer the real foot point.
+- If feet are occluded (behind a desk), the single-point estimate drifts — the
+  box bottom is no longer the real foot point. Multi-camera **blob intersection**
+  (above) recovers it when another camera sees the feet.
 - True height/Z is not measured; only a rough estimate is possible.
 - For centimeter-accurate or multi-floor 3D, use a depth camera (RealSense /
   ZED / OAK-D) — the detector/tracker stay the same, only `geometry.py` changes
@@ -140,6 +179,7 @@ your feet* (it places you wrong, not late) are a separate, foot-point problem.
 | `src/sync.py` | align cameras to a common capture instant |
 | `src/detector.py` | YOLO person detect + ByteTrack |
 | `src/geometry.py` | image→world homography math |
+| `src/groundblob.py` | bbox→floor trapezoid + cross-camera blob intersection |
 | `src/plan.py` | shared world↔pixel frame + `load_plan(cfg)` factory |
 | `src/pointcloud_plan.py` | top-down map rendered from the `.las` scan |
 | `src/floorplan.py` | DXF floorplan render (legacy `source: dxf`) |

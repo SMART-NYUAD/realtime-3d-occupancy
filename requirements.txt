@@ -8,3 +8,4 @@ numpy>=1.24
 opencv-python>=4.8
 laspy>=2.5           # read the .las lab scan -> top-down calibration map
 ezdxf>=1.1           # read the legacy DXF floorplan (source: dxf)
+paho-mqtt>=2.0       # publish position snapshots to MQTT

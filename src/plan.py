@@ -37,6 +37,23 @@ class PlanBase:
         return (-tol <= wx <= self.width_m + tol and
                 -tol <= wy <= self.height_m + tol)
 
+    def in_valid_area(self, wx, wy):
+        """True if a world point is inside the configured usable floor area."""
+        if not self.in_bounds(wx, wy):
+            return False
+        poly = getattr(self, "valid_area", None)
+        mask = getattr(self, "valid_mask", None)
+        if mask is not None:
+            px, py = self.world_to_px(wx, wy)
+            if px < 0 or px >= self.canvas_w or py < 0 or py >= self.canvas_h:
+                return False
+            return bool(mask[py, px])
+        if poly is None:
+            return True
+        tol = float(getattr(self, "valid_area_tol_m", 0.0))
+        dist = cv2.pointPolygonTest(poly, (float(wx), float(wy)), True)
+        return dist >= -tol
+
     def snap(self, wx, wy, tol_m=0.15):
         """Nearest snap vertex to (wx, wy) within tol_m, else the point itself.
 
@@ -88,7 +105,7 @@ def load_plan(cfg):
 
     if source in ("pointcloud", "pc", "las", "scan"):
         from pointcloud_plan import PointCloudPlan
-        return PointCloudPlan(
+        plan = PointCloudPlan(
             fpc.get("pointcloud_file", "smart_lab.las"),
             px_per_m=px_per_m, margin_m=margin_m,
             up_axis=fpc.get("up_axis", "auto"),
@@ -99,7 +116,44 @@ def load_plan(cfg):
             flip_y=fpc.get("flip_y", False),
             rgb_autocontrast=fpc.get("rgb_autocontrast", True),
         )
+        _configure_valid_area(plan, fpc)
+        return plan
     if source == "dxf":
         from floorplan import Floorplan
-        return Floorplan(fpc["file"], px_per_m=px_per_m, margin_m=margin_m)
+        plan = Floorplan(fpc["file"], px_per_m=px_per_m, margin_m=margin_m)
+        _configure_valid_area(plan, fpc)
+        return plan
     raise ValueError(f"Unknown floorplan.source '{source}' (use 'pointcloud' or 'dxf').")
+
+
+def _configure_valid_area(plan, fpc):
+    """Attach an optional room polygon used to reject impossible projections."""
+    raw = fpc.get("valid_area", "auto")
+    plan.valid_area = None
+    plan.valid_mask = None
+    plan.valid_area_tol_m = float(fpc.get("valid_area_tol_m", 0.0))
+    if raw in (None, False) or raw == []:
+        return
+    if str(raw).lower() == "auto":
+        plan.valid_mask = _auto_valid_mask(plan)
+        return
+    poly = np.asarray(raw, dtype=np.float32)
+    if poly.ndim != 2 or poly.shape[1] != 2 or len(poly) < 3:
+        raise ValueError("floorplan.valid_area must be 'auto' or a list of at least three [x, y] points")
+    plan.valid_area = poly
+
+
+def _auto_valid_mask(plan):
+    """Build a usable-area mask from rendered map pixels.
+
+    The renderers use a dark background for empty space. Anything drawn by the
+    scan/DXF is treated as part of the usable footprint, then expanded/closed by
+    the configured tolerance so sparse point clouds do not create tiny holes.
+    """
+    bg = plan.background()
+    non_empty = np.max(np.abs(bg.astype(np.int16) - 25), axis=2) > 8
+    tol_px = max(1, int(round(float(plan.valid_area_tol_m) * plan.px_per_m)))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * tol_px + 1, 2 * tol_px + 1))
+    mask = cv2.morphologyEx(non_empty.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
+    mask = cv2.dilate(mask, kernel)
+    return mask.astype(bool)

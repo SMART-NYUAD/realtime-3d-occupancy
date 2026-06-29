@@ -30,8 +30,8 @@ camera_defaults:
   flip_method: 0
 
 detector:
-  model: "yolo11n.pt"     # auto-downloaded. n=fast, s/m/l=more accurate
-  conf: 0.35              # min confidence for a detection
+  model: "yolo11m.pt"     # auto-downloaded. n=fast, s/m/l=more accurate
+  conf: 0.55              # min confidence for a detection
   iou: 0.5
   imgsz: 640
   device: "cuda:0"        # "cuda:0" on Thor GPU, or "cpu"
@@ -65,6 +65,14 @@ floorplan:
   # calibrations agree. Built up by calibrate.py; snap to existing ones to share.
   reference_points_file: "reference_points.json"
 
+  # Usable-room spatial gate. "auto" derives a mask from the rendered top-down
+  # scan/floorplan, so detections projected into empty/outside-map space are
+  # ignored before fusion. You can override with explicit room corners:
+  #   valid_area: [[0,0], [8,0], [8,5], [0,5]]
+  # Set [] to disable this and use only broad rectangular map bounds.
+  valid_area: auto
+  valid_area_tol_m: 0.15
+
 # NTP-synchronized capture. The cameras are chrony/NTP clients of this host, so
 # each frame's RTCP capture timestamp is a clock shared across cameras. With this
 # on, track.py aligns all cameras to a common capture instant instead of fusing
@@ -72,21 +80,57 @@ floorplan:
 # into a second dot. RTSP/H.264 only; needs system gi+GStreamer (see setup.sh).
 sync:
   enabled: true
-  decoder: sw             # sw=openh264 (portable) | hw=nvv4l2decoder | nvdec=nvh264dec
-  tol_ms: 75              # a camera's frame must be within this of the target instant
+  decoder: hw             # sw=openh264 (portable) | hw=nvv4l2decoder | nvdec=nvh264dec
+  tol_ms: 75             # a camera's frame must be within this of the target instant
   buffer_sec: 1.0         # per-camera frame history kept for time-alignment
   latency_ms: 100         # rtspsrc jitter buffer
 
 fusion:
   enabled: true
-  merge_distance_m: 1.2   # detections this close (across cameras) = same person
+  merge_distance_m: 1.5   # detections this close (across cameras) = same person
   match_gate_m: 1.8       # max a person can move between frames to keep its ID
   max_age_s: 1.5          # keep a global track this long while unseen (occlusion)
-  smoothing: 0.5          # position EMA: higher = snappier, lower = smoother
+  smoothing: 0.35          # position EMA: higher = snappier, lower = smoother
   show_raw_dots: false    # also draw faint per-camera dots behind fused markers
+
+  # Ground-plane blob intersection. Instead of fusing each camera's single foot
+  # point, project each detection's bbox to a floor *trapezoid* of foot-point
+  # uncertainty and place the person where the cameras' trapezoids overlap. This
+  # fixes the case where one camera can't see the feet (occluded/clipped) and
+  # would otherwise put the person too far away. See src/groundblob.py.
+  use_blob: true
+  # The foot estimate errs one way: a hidden/occluded foot only ever looks too
+  # FAR, so the trapezoid reaches mostly toward the camera (near) and barely past
+  # the box bottom (far). Fractions are of the detection box height.
+  blob_far_frac: 0.1      # feet-barely-farther margin past the box bottom
+  blob_near_frac: 1.4     # feet-could-be-this-much-nearer reach (furniture occlusion)
+  blob_clip_inflate: 2.5  # box clipped at frame bottom -> reach this many box-heights
+                          # toward the camera instead ("can't see feet at all")
+  blob_body_aspect: 3.0   # height:width of a standing person. Occlusion shrinks the
+                          # box height but not its width, so reach down to where a
+                          # body this tall would put the feet (0 = off). Over-reach
+                          # is harmless: a tight camera still pins the result.
+  # A can't-see-feet camera's foot point drifts too far to cluster by distance
+  # (merge_distance_m), so its *trapezoid* overlap is allowed to merge it instead,
+  # up to this looser gate. This is what actually stops the "two dots for one
+  # person" split. Keep below the spacing of distinct people to avoid over-merging.
+  blob_merge_gate_m: 3.0
+  show_blobs: true        # draw the trapezoids + their intersection on the map
 
 output:
   show_window: true
-  show_camera_windows: true  # show each camera's annotated video too
+  show_camera_windows: true # show each camera's annotated video too (costs FPS)
   draw_track_trails: false   # true = draw movement path lines; false = dots only
   trail_length: 30
+  mqtt:
+    enabled: true
+    broker: "192.168.50.117"
+    port: 1883
+    username: "smart"
+    password: "smart"
+    serial: "051003342"
+    topic: "smx/device/051003342/position"
+    publish_hz: 10
+    trail_length: 10
+    qos: 0
+    retain: false
