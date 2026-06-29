@@ -27,6 +27,7 @@ from groundblob import bbox_floor_polygon                       # noqa: E402
 from visualizer import draw_camera_view                        # noqa: E402
 from plan import load_plan                                     # noqa: E402
 from fusion import Fusion                                      # noqa: E402
+from env import load_env                                        # noqa: E402
 from mqtt_output import MqttPositionPublisher                  # noqa: E402
 
 # one distinct color per camera so you can see which camera sees whom
@@ -41,6 +42,7 @@ def main():
                     help="run N seconds with no GUI, saving snapshots to --save-dir")
     ap.add_argument("--save-dir", default="/tmp")
     args = ap.parse_args()
+    load_env()
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 

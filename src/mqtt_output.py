@@ -22,8 +22,8 @@ class MqttPositionPublisher:
         self._mqtt = mqtt
         self.broker = cfg.get("broker", "localhost")
         self.port = int(cfg.get("port", 1883))
-        self.username = cfg.get("username")
-        self.password = cfg.get("password")
+        self.username = os.environ.get("MQTT_USERNAME") or cfg.get("username")
+        self.password = os.environ.get("MQTT_PASSWORD") or cfg.get("password")
         self.serial = str(cfg.get("serial", "people_tracker_3d"))
         self.topic = cfg.get("topic", f"smx/device/{self.serial}/position")
         self.qos = int(cfg.get("qos", 0))

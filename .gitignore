@@ -1,3 +1,6 @@
+# Local secrets (copy from .env.example)
+.env
+
 # Python virtual environment (large; recreate with ./setup.sh)
 .venv/
 
@@ -15,3 +18,8 @@ __pycache__/
 # Cached top-down render of the point cloud (regenerated from the .las)
 *.topdown.npz
 topdown.png
+
+# YOLO / detector weights (large; auto-downloaded or built locally)
+*.pt
+*.onnx
+*.engine

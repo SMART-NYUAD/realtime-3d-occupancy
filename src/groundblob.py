@@ -69,7 +69,7 @@ def _project_row(H, x1, x2, v, ref_sign):
 
 
 def bbox_floor_polygon(H, bbox, frame_wh, far_frac=0.1, near_frac=1.0,
-                       clip_inflate=2.5, body_aspect=2.5):
+                       clip_inflate=2.5, body_aspect=2.5, short_aspect=1.3):
     """Project a detection's bbox to a floor trapezoid of foot-point uncertainty.
 
     The uncertainty is *one-sided*: occlusion and clipping can only hide the
@@ -97,6 +97,15 @@ def bbox_floor_polygon(H, bbox, frame_wh, far_frac=0.1, near_frac=1.0,
                     height-based reach falls short. So also reach down to where a
                     full body of height `body_aspect * box_width` would put the
                     feet (0 disables this width-based term).
+        short_aspect: aspect ratio (box_height / box_width) below which the box is
+                    treated as a partial (torso-only) detection -- well under the
+                    ~2.2 of a full standing person -- whose bottom edge sits at the
+                    waist/chest rather than the feet. The shorter it is, the
+                    further past the box bottom the real feet lie, so `near_frac`
+                    is scaled up by `short_aspect / aspect`, reaching more
+                    aggressively toward the camera (0 disables this gate). The
+                    scale is 1.0 exactly at the threshold, so detections crossing
+                    it frame-to-frame don't jump.
 
     Returns an (N, 2) float array of floor points (a convex quad, ordered), or
     None if the band is entirely above the horizon (can't form a floor region).
@@ -110,6 +119,16 @@ def bbox_floor_polygon(H, bbox, frame_wh, far_frac=0.1, near_frac=1.0,
     ref = _floor_sign(H, 0.5 * (x1 + x2), y2)
     if ref == 0.0:
         return None
+
+    # Partial (torso-only) detection: when the lower body is occluded or clipped
+    # the box gets short *relative to its width* and its bottom edge sits at the
+    # waist/chest, not the feet -- so projecting that bottom point would place the
+    # person too far away. The shorter the box, the more of the lower body (and
+    # thus depth toward the camera) is missing, so reach more aggressively: scale
+    # the near reach up by how far the aspect ratio falls short of `short_aspect`.
+    aspect = box_h / box_w
+    if short_aspect > 0.0 and aspect < short_aspect:
+        near_frac *= short_aspect / aspect
 
     v_far = y2 - far_frac * box_h          # feet barely farther than box bottom
     v_near = y2 + near_frac * box_h        # feet possibly much nearer (occlusion)

@@ -94,8 +94,9 @@ Opens two windows: the annotated **camera** view and the **top-down floor map**.
 Press `q` to quit. Set `output.show_window: false` in `config.yaml` to run
 headless and stream coordinates to stdout instead.
 
-To publish positions to MQTT, set `output.mqtt.enabled: true` in `config.yaml`
-and fill in the broker settings. The tracker publishes TAC-B-style `position`
+To publish positions to MQTT, set `output.mqtt.enabled: true` in `config.yaml`,
+fill in the broker settings, and copy `.env.example` to `.env` with
+`MQTT_USERNAME` / `MQTT_PASSWORD`. The tracker publishes TAC-B-style `position`
 messages to `output.mqtt.topic`, under `smx/device/...` by default, so existing
 subscribers on `smx/device/#` can consume them.
 
