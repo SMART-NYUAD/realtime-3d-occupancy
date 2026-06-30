@@ -65,6 +65,32 @@ def test_polygon_shape(Hs):
     print("PASS bbox_floor_polygon (sign-robust; clipped is taller)")
 
 
+def test_short_box_reaches_nearer(Hs):
+    """A partial (torso-only) box -- short relative to its width, bottom edge at
+    the waist -- must reach further toward the camera than its near_frac alone,
+    while a full standing box is left unchanged. Isolate the short-aspect term by
+    turning off the width-based body_aspect reach and avoiding the clip case."""
+    H = Hs["yi04"]
+
+    def depth(p):
+        return np.linalg.norm(p[0] - p[3])  # far-left -> near-left edge
+
+    common = dict(near_frac=1.0, body_aspect=0.0)
+    # Torso-only: h:w = 110:100 = 1.1, below the 1.3 threshold; not frame-clipped.
+    short_box = (600, 430, 700, 540)
+    off = bbox_floor_polygon(H, short_box, (W, H_IMG), short_aspect=0.0, **common)
+    on = bbox_floor_polygon(H, short_box, (W, H_IMG), short_aspect=1.3, **common)
+    assert off is not None and on is not None
+    assert depth(on) > depth(off), (depth(on), depth(off))
+
+    # A full standing box (h:w ~3.1) is above the threshold -> untouched.
+    tall_box = (600, 250, 700, 560)
+    t_off = bbox_floor_polygon(H, tall_box, (W, H_IMG), short_aspect=0.0, **common)
+    t_on = bbox_floor_polygon(H, tall_box, (W, H_IMG), short_aspect=1.3, **common)
+    assert np.allclose(t_off, t_on), "full standing box must be unaffected"
+    print("PASS short torso box reaches nearer; full standing box unchanged")
+
+
 # --- end-to-end fusion on real geometry -------------------------------------
 
 def _frame():
@@ -143,6 +169,7 @@ if __name__ == "__main__":
     Hs = _load()
     if Hs is not None:
         test_polygon_shape(Hs)
+        test_short_box_reaches_nearer(Hs)
         F, w2p = _frame()
         if F is None:
             print("SKIP fusion tests: no shared floor point found")

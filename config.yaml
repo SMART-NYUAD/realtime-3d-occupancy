@@ -84,6 +84,17 @@ sync:
   tol_ms: 75             # a camera's frame must be within this of the target instant
   buffer_sec: 1.0         # per-camera frame history kept for time-alignment
   latency_ms: 100         # rtspsrc jitter buffer
+  # RTSP transport. tcp is reliable but under packet loss it *delays*: the jitter
+  # buffer ratchets up and never drains, so one camera drifts ~1s behind the rest.
+  # udp drops lost packets instead, keeping latency live. If a stream won't stay
+  # connected over udp (some networks block it), set protocol: tcp.
+  protocol: udp           # udp | tcp | udp+tcp
+  drop_on_latency: true   # drop buffers that exceed the latency budget instead of growing it
+  retransmission: false   # request RTP retransmission (true = fewer artifacts, more latency)
+  # A camera lagging more than this behind the most-live one is treated as stuck and
+  # dropped from the aligned set, rather than dragging every camera back to its time
+  # (which freezes them once the gap exceeds buffer_sec). Keep below buffer_sec.
+  lag_budget_ms: 500
 
 fusion:
   enabled: true
@@ -110,6 +121,12 @@ fusion:
                           # box height but not its width, so reach down to where a
                           # body this tall would put the feet (0 = off). Over-reach
                           # is harmless: a tight camera still pins the result.
+  blob_short_aspect: 1.8  # h:w below which a box is a partial (torso-only) detection
+                          # whose bottom edge sits at the waist, not the feet (a full
+                          # standing person is ~2.2). The shorter the box, the more
+                          # the near reach (blob_near_frac) is scaled up toward the
+                          # camera (scale = blob_short_aspect / observed_aspect, so
+                          # it's 1.0 at the threshold; 0 = off).
   # A can't-see-feet camera's foot point drifts too far to cluster by distance
   # (merge_distance_m), so its *trapezoid* overlap is allowed to merge it instead,
   # up to this looser gate. This is what actually stops the "two dots for one

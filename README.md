@@ -118,7 +118,16 @@ skew drops to ~20 ms) before detecting and fusing.
 - Needs system **PyGObject + GStreamer** (`setup.sh` links them into the venv;
   it prints the `apt` packages to install if they're missing).
 - `decoder: sw` (openh264) is the portable default; `hw`/`nvdec` use Jetson NVDEC.
-- Verify the live skew yourself: `python src/gst_stream.py config.yaml`.
+- `protocol: udp` keeps latency *live*: over `tcp`, packet loss makes the jitter
+  buffer ratchet up and never drain, so one camera slowly drifts ~1s behind the
+  rest. `drop_on_latency`/`retransmission: false` bound it further. Use `tcp` only
+  if a stream won't stay connected over udp.
+- A camera that still lags more than `lag_budget_ms` behind the most-live one is
+  dropped from the aligned set rather than dragging every camera back to its time
+  (and freezing them once the gap exceeds `buffer_sec`).
+- Verify the live skew yourself: `python src/gst_stream.py config.yaml <decoder> <protocol>`
+  (e.g. `... config.yaml hw udp`), or watch the `[sync] spread=…` line `track.py`
+  now prints each second.
 
 This addresses lag-induced duplicates. Duplicates from a camera that *can't see
 your feet* (it places you wrong, not late) are a separate, foot-point problem —
@@ -146,7 +155,10 @@ point, and puts the person where the cameras' trapezoids **overlap**:
 
 Because occlusion only ever makes the foot look *too far*, the trapezoid reaches
 mostly toward the camera (tunable in the `fusion:` block: `blob_near_frac`,
-`blob_body_aspect`, `blob_clip_inflate`). Two detections merge when their
+`blob_body_aspect`, `blob_clip_inflate`, `blob_short_aspect`). A partial
+torso-only box (short relative to its width, bottom edge at the waist) reaches
+even more aggressively, scaled by how far its aspect ratio falls below
+`blob_short_aspect`. Two detections merge when their
 trapezoids overlap — not only when their foot points are close — which is what
 actually rejoins the split. Set `fusion.show_blobs: true` to draw the trapezoids
 and their intersection on the top-down map. Trapezoids that don't overlap (e.g.

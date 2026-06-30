@@ -45,7 +45,8 @@ def _ntp_ns_to_unix(ns):
 
 class SyncCameraStream:
     def __init__(self, cam, decoder="sw", buffer_sec=1.0, width=None, height=None,
-                 latency_ms=100):
+                 latency_ms=100, protocol="tcp", drop_on_latency=False,
+                 retransmission=True):
         self.name = cam["name"]
         self.source = str(cam["source"])
         self._buf = deque()            # (capture_t, frame), oldest -> newest
@@ -55,14 +56,25 @@ class SyncCameraStream:
         self._last_t = None
         self._frames = 0
         self._with_ntp = 0
+        self._missing_ntp = 0          # decoded frames whose NTP capture time was lost
+        self._ntp_seen = False         # has this stream ever delivered an NTP timestamp?
         self._running = True
 
         dec = DECODERS.get(decoder, DECODERS["sw"])
         scale = "videoscale ! " if (width and height) else ""
         dims = f",width={int(width)},height={int(height)}" if (width and height) else ""
+        # Transport tuning. tcp is reliable but under loss it *delays* (the jitter
+        # buffer ratchets up and never drains, so a camera drifts seconds behind the
+        # rest); udp drops instead, keeping latency live. drop-on-latency / no
+        # retransmission keep it bounded. See the `sync:` block in config.yaml.
+        extra = ""
+        if drop_on_latency:
+            extra += " drop-on-latency=true"
+        if not retransmission:
+            extra += " do-retransmission=false"
         pipeline = (
-            f"rtspsrc location={self.source} protocols=tcp latency={int(latency_ms)} "
-            f"ntp-sync=true ntp-time-source=ntp add-reference-timestamp-meta=true name=src "
+            f"rtspsrc location={self.source} protocols={protocol} latency={int(latency_ms)} "
+            f"ntp-sync=true ntp-time-source=ntp add-reference-timestamp-meta=true{extra} name=src "
             f"! rtph264depay ! h264parse name=parse ! {dec} ! videoconvert ! {scale}"
             f"video/x-raw,format=BGR{dims} ! appsink name=sink emit-signals=true "
             f"max-buffers=2 drop=true sync=false"
@@ -93,6 +105,20 @@ class SyncCameraStream:
         buf = sample.get_buffer()
         s = sample.get_caps().get_structure(0)
         w, h = s.get_value("width"), s.get_value("height")
+        cap_t = self._ntp_by_pts.pop(buf.pts, None)
+        if cap_t is not None:
+            self._with_ntp += 1
+            self._ntp_seen = True
+        else:
+            self._missing_ntp += 1
+            # An NTP stream hitting a dropout: stamping with arrival time (now) would
+            # put this frame on a *different* clock than the buffered NTP frames
+            # (which are one pipeline-latency old), inverting their order and making
+            # the buffer_sec trim evict good frames. Drop it instead -- the camera
+            # just has no fresh frame until NTP resumes, which is the honest state.
+            if self._ntp_seen:
+                return Gst.FlowReturn.OK
+            cap_t = time.time()                    # never had NTP -> arrival time is all we have
         ok, mi = buf.map(Gst.MapFlags.READ)
         if not ok:
             return Gst.FlowReturn.OK
@@ -102,11 +128,6 @@ class SyncCameraStream:
                      .reshape(h, row // 3, 3)[:, :w, :].copy())
         finally:
             buf.unmap(mi)
-        cap_t = self._ntp_by_pts.pop(buf.pts, None)
-        if cap_t is None:
-            cap_t = time.time()                    # fallback: arrival time
-        else:
-            self._with_ntp += 1
         with self._lock:
             self._frames += 1
             self._buf.append((cap_t, frame))
@@ -139,6 +160,7 @@ class SyncCameraStream:
     def stats(self):
         with self._lock:
             return {"frames": self._frames, "with_ntp": self._with_ntp,
+                    "missing_ntp": self._missing_ntp,
                     "buffered": len(self._buf), "last_t": self._last_t}
 
     def release(self):
@@ -146,7 +168,7 @@ class SyncCameraStream:
         self.pipe.set_state(Gst.State.NULL)
 
 
-# ---- live self-test: python src/gst_stream.py [config.yaml] [decoder] ---------
+# ---- live self-test: python src/gst_stream.py [config.yaml] [decoder] [protocol] --
 if __name__ == "__main__":
     import sys
     import yaml
@@ -155,10 +177,13 @@ if __name__ == "__main__":
 
     cfg = yaml.safe_load(open(sys.argv[1] if len(sys.argv) > 1 else "config.yaml"))
     decoder = sys.argv[2] if len(sys.argv) > 2 else "sw"
+    protocol = sys.argv[3] if len(sys.argv) > 3 else "tcp"
     cams = list_cameras(cfg)
-    streams = [SyncCameraStream(c, decoder=decoder,
+    streams = [SyncCameraStream(c, decoder=decoder, protocol=protocol,
+                                drop_on_latency=(protocol != "tcp"),
+                                retransmission=(protocol == "tcp"),
                                 width=c.get("width"), height=c.get("height")) for c in cams]
-    print(f"opened {len(streams)} cameras (decoder={decoder}); warming up...")
+    print(f"opened {len(streams)} cameras (decoder={decoder}, protocol={protocol}); warming up...")
     time.sleep(3.0)
     try:
         for _ in range(8):
@@ -176,7 +201,8 @@ if __name__ == "__main__":
                 st = s.stats()
                 line.append(f"{s.name}: lag={(time.time()-have[s.name])*1000:4.0f}ms "
                             f"match={'%+4.0fms' % age if age is not None else ' miss'} "
-                            f"ntp={st['with_ntp']}/{st['frames']}")
+                            f"ntp={st['with_ntp']}/{st['frames']}"
+                            f"{' miss=%d' % st['missing_ntp'] if st['missing_ntp'] else ''}")
             spread = (max(have.values()) - min(have.values())) * 1000
             print(f"latest-spread={spread:4.0f}ms | " + " | ".join(line))
     finally:

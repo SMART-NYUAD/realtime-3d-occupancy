@@ -85,7 +85,11 @@ def main():
         group = SyncGroup(cams, decoder=scfg.get("decoder", "sw"),
                           tol_s=scfg.get("tol_ms", 75) / 1000.0,
                           buffer_sec=scfg.get("buffer_sec", 1.0),
-                          latency_ms=scfg.get("latency_ms", 100))
+                          latency_ms=scfg.get("latency_ms", 100),
+                          lag_budget_s=scfg.get("lag_budget_ms", 500) / 1000.0,
+                          protocol=scfg.get("protocol", "tcp"),
+                          drop_on_latency=scfg.get("drop_on_latency", False),
+                          retransmission=scfg.get("retransmission", True))
 
     show_cams = cfg["output"].get("show_camera_windows", True)
     draw_trails = cfg["output"]["draw_track_trails"]
@@ -101,6 +105,7 @@ def main():
     blob_near_frac = fcfg.get("blob_near_frac", 1.0)
     blob_clip_inflate = fcfg.get("blob_clip_inflate", 2.5)
     blob_body_aspect = fcfg.get("blob_body_aspect", 3.0)
+    blob_short_aspect = fcfg.get("blob_short_aspect", 1.3)
     show_blobs = fcfg.get("show_blobs", False)
     fuser = Fusion(fcfg.get("merge_distance_m", 0.6), fcfg.get("match_gate_m", 1.0),
                    fcfg.get("max_age_s", 1.5), fcfg.get("smoothing", 0.5),
@@ -149,7 +154,8 @@ def main():
                                 far_frac=blob_far_frac,
                                 near_frac=blob_near_frac,
                                 clip_inflate=blob_clip_inflate,
-                                body_aspect=blob_body_aspect)
+                                body_aspect=blob_body_aspect,
+                                short_aspect=blob_short_aspect)
             all_people.extend(people)
 
             if show_cams or headless:
@@ -218,6 +224,14 @@ def main():
         if time.time() - fps_t >= 1.0:
             fps = fps_n / (time.time() - fps_t)
             fps_t, fps_n = time.time(), 0
+            if sync_on and group is not None:
+                spread, info = group.health()
+                cams_str = " | ".join(
+                    f"{n} lag={d['lag']*1000:4.0f}ms ntp={d['with_ntp']}/{d['frames']}"
+                    f"{' miss=%d' % d['missing'] if d['missing'] else ''}"
+                    f"{' STUCK' if d['stuck'] else ''}"
+                    for n, d in info.items() if d["lag"] is not None)
+                print(f"[sync] spread={spread*1000:4.0f}ms | {cams_str}")
         label = "people" if fuse_on else "on map"
         cv2.putText(canvas, f"{fps:.1f} FPS | {n_people} {label}", (10, 22),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
