@@ -31,11 +31,15 @@ camera_defaults:
 
 detector:
   model: "yolo11m.pt"     # auto-downloaded. n=fast, s/m/l=more accurate
-  conf: 0.55              # min confidence for a detection
+  # Keep this LOW. In Ultralytics this conf filters detections BEFORE ByteTrack
+  # sees them, so a high value disables ByteTrack's low-score recovery stage and
+  # makes people flicker out on confidence dips. Let the thresholds in
+  # bytetrack.yaml (new_track_thresh / track_high_thresh) do the real gating.
+  conf: 0.15             # min confidence a box needs to reach the tracker
   iou: 0.5
   imgsz: 640
   device: "cuda:0"        # "cuda:0" on Thor GPU, or "cpu"
-  tracker: "bytetrack.yaml"   # ByteTrack gives stable IDs across frames
+  tracker: "bytetrack.yaml"   # repo-local ByteTrack config (./bytetrack.yaml)
 
 floorplan:
   # The top-down map = the shared world frame (meters, origin at the bbox min

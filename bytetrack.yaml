@@ -1,0 +1,19 @@
+# ByteTrack config for people_tracker_3d (overrides Ultralytics' bundled defaults).
+#
+# Why a custom file: the `conf` passed to YOLO.track() filters detections BEFORE
+# ByteTrack sees them, which silently disables ByteTrack's whole point -- its
+# second-stage association of low-score boxes that keeps a track alive through
+# confidence dips. With detector.conf low (see config.yaml), low-score boxes now
+# reach the tracker, and the thresholds below decide what survives, so a person
+# who momentarily drops below conf (seated / partially occluded) no longer
+# flickers out and gets re-placed by another camera's worse box.
+#
+# Docs: https://docs.ultralytics.com/modes/track
+
+tracker_type: bytetrack # (str) Tracker backend: bytetrack
+track_high_thresh: 0.35 # (float) First-stage match threshold; confident boxes
+track_low_thresh: 0.1   # (float) Second-stage low-score recovery; sustains tracks through dips
+new_track_thresh: 0.4   # (float) Min score to START a new track; high enough to avoid spurious tracks
+track_buffer: 75        # (int) Frames to keep a lost track alive (~2.5s @30fps) to ride out flicker/occlusion
+match_thresh: 0.8       # (float) Association similarity (IoU/cost) threshold
+fuse_score: True        # (bool) Fuse detection score with motion/IoU; stabilizes weak detections
