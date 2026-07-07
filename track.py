@@ -166,7 +166,7 @@ def main():
             all_people.extend(people)
 
             if show_cams or headless:
-                view = draw_camera_view(blurrer.blur(frame), people)
+                view = draw_camera_view(blurrer.blur(frame, key=name), people)
                 cv2.putText(view, f"{name}: {len(people)} people", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, colors[name], 2)
                 view = cv2.resize(view, (640, 360))

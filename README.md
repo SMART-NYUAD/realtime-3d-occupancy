@@ -119,8 +119,16 @@ Configure it under `output.blur_faces` in `config.yaml`:
 - `ellipse`, `mask_scale`, `mosaicsize` — blur shape/size
 
 If `deface` isn't installed, face blur simply stays off and tracking runs
-normally. Full-resolution detection is the biggest CPU cost of the preview — if
-previews get slow, set a `det_size` (e.g. `960`) or turn `blur_faces` off.
+normally.
+
+**Performance.** CenterFace runs on the CPU here (there's no `onnxruntime-gpu`
+wheel for this JetPack, and pip OpenCV's DNN is CPU-only), ~100+ ms per full-res
+frame — too slow to run inline for several cameras (it dropped a live 3-camera
+run to ~0.4 FPS). So detection runs in a **background thread per camera**
+(`async_detect: true`) and the render loop just applies the newest boxes to each
+frame; faces move slowly, so slightly-stale boxes look fine and FPS returns to
+baseline. If it's still too heavy, cap `det_size` (e.g. `960`), raise `threshold`,
+or set `async_detect: false` to detect inline.
 
 ## Synchronisation (NTP) — why one person isn't two
 

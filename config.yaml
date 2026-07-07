@@ -155,6 +155,10 @@ output:
   # the model bundled — no separate weight file needed.
   blur_faces:
     enabled: true
+    # Detect faces in a background thread so the preview FPS doesn't wait on the
+    # (CPU-bound, ~100+ ms) face model; the newest boxes are applied to each frame.
+    # false = detect inline (throttles FPS to detection speed).
+    async_detect: true
     threshold: 0.2            # min face-detection confidence (deface default; low
                              # on purpose — small/far faces score low)
     det_size: 0              # detector long side; 0 = full frame resolution (best
