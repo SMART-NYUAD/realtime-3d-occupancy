@@ -29,7 +29,7 @@ import yaml
 
 sys.path.insert(0, "src")
 from capture import open_capture, get_camera, list_cameras         # noqa: E402
-from floorplan import Floorplan                                    # noqa: E402
+from plan import load_plan                                         # noqa: E402
 from geometry import compute_homography, save_homography, image_to_floor  # noqa: E402
 
 CAM_WIN = "CAMERA"
@@ -154,12 +154,12 @@ def main():
 
     cam = get_camera(cfg, args.camera) if args.camera else list_cameras(cfg)[0]
     fpc = cfg["floorplan"]
-    fp = Floorplan(fpc["file"], px_per_m=fpc["px_per_m"], margin_m=fpc["margin_m"])
+    fp = load_plan(cfg)
     refs_path = fpc.get("reference_points_file", "reference_points.json")
 
     state["refs"], state["next_id"] = load_refs(refs_path)
     print(f"Calibrating '{cam['name']}'  ({cam['source']})")
-    print(f"Floorplan: {fp.width_m:.2f} x {fp.height_m:.2f} m | "
+    print(f"Map: {fp.width_m:.2f} x {fp.height_m:.2f} m | "
           f"{len(state['refs'])} existing reference points")
 
     frame = grab_frame(cam, args.frame)

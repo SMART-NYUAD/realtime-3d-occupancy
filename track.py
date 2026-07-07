@@ -23,9 +23,12 @@ from capture import list_cameras                               # noqa: E402
 from stream import CameraStream                                # noqa: E402
 from detector import PersonTracker                             # noqa: E402
 from geometry import load_homography, image_to_floor, foot_point  # noqa: E402
+from groundblob import bbox_floor_polygon                       # noqa: E402
 from visualizer import draw_camera_view                        # noqa: E402
-from floorplan import Floorplan                                # noqa: E402
+from plan import load_plan                                     # noqa: E402
 from fusion import Fusion                                      # noqa: E402
+from env import load_env                                        # noqa: E402
+from mqtt_output import MqttPositionPublisher                  # noqa: E402
 
 # one distinct color per camera so you can see which camera sees whom
 CAM_COLORS = [(0, 200, 255), (0, 255, 0), (255, 120, 0),
@@ -39,12 +42,20 @@ def main():
                     help="run N seconds with no GUI, saving snapshots to --save-dir")
     ap.add_argument("--save-dir", default="/tmp")
     args = ap.parse_args()
+    load_env()
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
     cams = list_cameras(cfg)
-    fpc = cfg["floorplan"]
-    floor = Floorplan(fpc["file"], px_per_m=fpc["px_per_m"], margin_m=fpc["margin_m"])
+    floor = load_plan(cfg)
+
+    # NTP-synchronized capture: align all cameras to a common capture instant so a
+    # laggy stream doesn't split a moving person into a second track. RTSP only.
+    scfg = cfg.get("sync", {})
+    sync_on = scfg.get("enabled", False)
+    if sync_on and not all(str(c["source"]).startswith("rtsp://") for c in cams):
+        print("[sync] disabled: needs all-RTSP sources.")
+        sync_on = False
 
     streams, trackers, homs, colors = {}, {}, {}, {}
     for i, cam in enumerate(cams):
@@ -61,19 +72,48 @@ def main():
         else:
             homs[name] = None
             print(f"[{name}] no homography ({hp}) — run: python calibrate.py --camera {name}")
-        print(f"[{name}] connecting to {cam['source']} ...")
-        streams[name] = CameraStream(cam)
+        if not sync_on:
+            print(f"[{name}] connecting to {cam['source']} ...")
+            streams[name] = CameraStream(
+                cam, reconnect_stuck_s=scfg.get("reconnect_stuck_ms", 5000) / 1000.0)
         trackers[name] = PersonTracker(cfg)   # separate tracker => per-camera IDs
+
+    group = None
+    if sync_on:
+        from sync import SyncGroup
+        print(f"[sync] NTP-synced capture (decoder={scfg.get('decoder', 'sw')}, "
+              f"tol={int(scfg.get('tol_ms', 75))}ms) connecting all cameras ...")
+        group = SyncGroup(cams, decoder=scfg.get("decoder", "sw"),
+                          tol_s=scfg.get("tol_ms", 75) / 1000.0,
+                          buffer_sec=scfg.get("buffer_sec", 1.0),
+                          latency_ms=scfg.get("latency_ms", 100),
+                          lag_budget_s=scfg.get("lag_budget_ms", 500) / 1000.0,
+                          protocol=scfg.get("protocol", "tcp"),
+                          drop_on_latency=scfg.get("drop_on_latency", False),
+                          retransmission=scfg.get("retransmission", True),
+                          reconnect_stuck_s=scfg.get("reconnect_stuck_ms", 3000) / 1000.0,
+                          reconnect_lag_s=scfg.get("reconnect_lag_ms", 0) / 1000.0)
 
     show_cams = cfg["output"].get("show_camera_windows", True)
     draw_trails = cfg["output"]["draw_track_trails"]
     trail_len = int(cfg["output"]["trail_length"])
     trails = defaultdict(lambda: deque(maxlen=trail_len))   # key: (cam_name, id)
+    mqtt_pub = MqttPositionPublisher(cfg["output"].get("mqtt", {}))
+    mqtt_pub.start()
 
     fcfg = cfg.get("fusion", {})
     fuse_on = fcfg.get("enabled", False)
+    use_blob = fcfg.get("use_blob", False)
+    blob_far_frac = fcfg.get("blob_far_frac", 0.1)
+    blob_near_frac = fcfg.get("blob_near_frac", 1.0)
+    blob_clip_inflate = fcfg.get("blob_clip_inflate", 2.5)
+    blob_body_aspect = fcfg.get("blob_body_aspect", 3.0)
+    blob_short_aspect = fcfg.get("blob_short_aspect", 1.3)
+    show_blobs = fcfg.get("show_blobs", False)
     fuser = Fusion(fcfg.get("merge_distance_m", 0.6), fcfg.get("match_gate_m", 1.0),
-                   fcfg.get("max_age_s", 1.5), fcfg.get("smoothing", 0.5)) if fuse_on else None
+                   fcfg.get("max_age_s", 1.5), fcfg.get("smoothing", 0.5),
+                   use_blob=use_blob,
+                   blob_merge_gate_m=fcfg.get("blob_merge_gate_m", 2.5)) if fuse_on else None
     show_raw = fcfg.get("show_raw_dots", False)
 
     headless = args.headless > 0.0
@@ -83,25 +123,42 @@ def main():
     print("\nTracking all cameras... " + ("(headless)" if headless else "press 'q' to quit."))
     while True:
         all_people = []
+        synced = None
+        if sync_on:
+            _t, synced = group.next_aligned()
+            if not synced:
+                continue
         for cam in cams:
             name = cam["name"]
-            frame = streams[name].read()
+            frame = synced.get(name) if sync_on else streams[name].read()
             if frame is None:
                 continue
             people = trackers[name].track(frame)
             H = homs[name]
+            fh, fw = frame.shape[:2]
             for p in people:
                 p["cam"] = name
                 p["world"] = None
+                p["floor_poly"] = None
                 if H is not None:
                     fx, fy = foot_point(p["bbox"])
                     w = image_to_floor(H, fx, fy)
-                    # discard detections that map outside the floorplan (distortion/bad foot point)
-                    if w is not None and not floor.in_bounds(*w):
+                    # Discard detections that project outside the usable room area.
+                    # This catches real detections whose occluded/clipped foot point
+                    # maps to an impossible floor position.
+                    if w is not None and not floor.in_valid_area(*w):
                         w = None
                     p["world"] = w
                     if w is not None:
                         trails[(name, p["id"])].append(w)
+                        if use_blob:
+                            p["floor_poly"] = bbox_floor_polygon(
+                                H, p["bbox"], (fw, fh),
+                                far_frac=blob_far_frac,
+                                near_frac=blob_near_frac,
+                                clip_inflate=blob_clip_inflate,
+                                body_aspect=blob_body_aspect,
+                                short_aspect=blob_short_aspect)
             all_people.extend(people)
 
             if show_cams or headless:
@@ -130,7 +187,20 @@ def main():
                         continue
                     px, py = floor.world_to_px(*p["world"])
                     cv2.circle(canvas, (px, py), 4, colors[p["cam"]], 1, cv2.LINE_AA)
+            # per-camera foot-uncertainty trapezoids (outline, camera colored)
+            if show_blobs:
+                for p in all_people:
+                    poly = p.get("floor_poly")
+                    if poly is None:
+                        continue
+                    pts = np.array([floor.world_to_px(x, y) for x, y in poly], np.int32)
+                    cv2.polylines(canvas, [pts], True, colors[p["cam"]], 1, cv2.LINE_AA)
             people_now = fuser.update(all_people)
+            # where the cameras' trapezoids agree (the collapsed uncertainty)
+            if show_blobs:
+                for poly in fuser.last_blobs:
+                    pts = np.array([floor.world_to_px(x, y) for x, y in poly], np.int32)
+                    cv2.polylines(canvas, [pts], True, (255, 255, 255), 2, cv2.LINE_AA)
             for g in people_now:
                 px, py = floor.world_to_px(*g["world"])
                 col = (160, 160, 160) if g["coasting"] else (60, 220, 60)
@@ -139,6 +209,7 @@ def main():
                 cv2.putText(canvas, tag, (px + 10, py),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1)
             n_people = len(people_now)
+            mqtt_pub.publish_positions(people_now)
         else:
             for p in all_people:
                 if p["world"] is None:
@@ -148,12 +219,23 @@ def main():
                 cv2.circle(canvas, (px, py), 7, col, -1, cv2.LINE_AA)
                 cv2.putText(canvas, f"{p['cam']}#{p['id']}", (px + 9, py),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1)
-            n_people = sum(1 for p in all_people if p["world"] is not None)
+            people_now = [p for p in all_people if p["world"] is not None]
+            n_people = len(people_now)
+            mqtt_pub.publish_positions(people_now)
 
         fps_n += 1
         if time.time() - fps_t >= 1.0:
             fps = fps_n / (time.time() - fps_t)
             fps_t, fps_n = time.time(), 0
+            if sync_on and group is not None:
+                spread, info = group.health()
+                cams_str = " | ".join(
+                    f"{n} lag={d['lag']*1000:4.0f}ms ntp={d['with_ntp']}/{d['frames']}"
+                    f"{' miss=%d' % d['missing'] if d['missing'] else ''}"
+                    f"{' rc=%d' % d['reconnects'] if d['reconnects'] else ''}"
+                    f"{' STUCK' if d['stuck'] else ''}"
+                    for n, d in info.items() if d["lag"] is not None)
+                print(f"[sync] spread={spread*1000:4.0f}ms | {cams_str}")
         label = "people" if fuse_on else "on map"
         cv2.putText(canvas, f"{fps:.1f} FPS | {n_people} {label}", (10, 22),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -174,8 +256,11 @@ def main():
             if (cv2.waitKey(1) & 0xFF) == ord("q"):
                 break
 
+    if group is not None:
+        group.release()
     for s in streams.values():
         s.release()
+    mqtt_pub.stop()
     cv2.destroyAllWindows()
 
 
