@@ -74,7 +74,8 @@ def main():
             print(f"[{name}] no homography ({hp}) — run: python calibrate.py --camera {name}")
         if not sync_on:
             print(f"[{name}] connecting to {cam['source']} ...")
-            streams[name] = CameraStream(cam)
+            streams[name] = CameraStream(
+                cam, reconnect_stuck_s=scfg.get("reconnect_stuck_ms", 5000) / 1000.0)
         trackers[name] = PersonTracker(cfg)   # separate tracker => per-camera IDs
 
     group = None
@@ -89,7 +90,9 @@ def main():
                           lag_budget_s=scfg.get("lag_budget_ms", 500) / 1000.0,
                           protocol=scfg.get("protocol", "tcp"),
                           drop_on_latency=scfg.get("drop_on_latency", False),
-                          retransmission=scfg.get("retransmission", True))
+                          retransmission=scfg.get("retransmission", True),
+                          reconnect_stuck_s=scfg.get("reconnect_stuck_ms", 3000) / 1000.0,
+                          reconnect_lag_s=scfg.get("reconnect_lag_ms", 0) / 1000.0)
 
     show_cams = cfg["output"].get("show_camera_windows", True)
     draw_trails = cfg["output"]["draw_track_trails"]
@@ -229,6 +232,7 @@ def main():
                 cams_str = " | ".join(
                     f"{n} lag={d['lag']*1000:4.0f}ms ntp={d['with_ntp']}/{d['frames']}"
                     f"{' miss=%d' % d['missing'] if d['missing'] else ''}"
+                    f"{' rc=%d' % d['reconnects'] if d['reconnects'] else ''}"
                     f"{' STUCK' if d['stuck'] else ''}"
                     for n, d in info.items() if d["lag"] is not None)
                 print(f"[sync] spread={spread*1000:4.0f}ms | {cams_str}")

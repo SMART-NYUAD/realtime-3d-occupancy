@@ -18,12 +18,14 @@ from gst_stream import SyncCameraStream
 class SyncGroup:
     def __init__(self, cams, decoder="sw", tol_s=0.075, buffer_sec=1.0, latency_ms=100,
                  lag_budget_s=0.5, protocol="tcp", drop_on_latency=False,
-                 retransmission=True):
+                 retransmission=True, reconnect_stuck_s=3.0, reconnect_lag_s=0.0):
         self.streams = {
             c["name"]: SyncCameraStream(c, decoder=decoder, buffer_sec=buffer_sec,
                                         latency_ms=latency_ms, protocol=protocol,
                                         drop_on_latency=drop_on_latency,
-                                        retransmission=retransmission)  # native resolution
+                                        retransmission=retransmission,
+                                        reconnect_stuck_s=reconnect_stuck_s,
+                                        reconnect_lag_s=reconnect_lag_s)  # native resolution
             for c in cams
         }
         self.tol = float(tol_s)
@@ -74,7 +76,8 @@ class SyncGroup:
                 lasts.append(lt)
             info[n] = {"lag": (now - lt) if lt is not None else None,
                        "with_ntp": st["with_ntp"], "frames": st["frames"],
-                       "missing": st["missing_ntp"], "stuck": False}
+                       "missing": st["missing_ntp"], "reconnects": st.get("reconnects", 0),
+                       "stuck": False}
         if lasts:
             newest = max(lasts)
             for n, d in info.items():

@@ -99,10 +99,16 @@ sync:
   # dropped from the aligned set, rather than dragging every camera back to its time
   # (which freezes them once the gap exceeds buffer_sec). Keep below buffer_sec.
   lag_budget_ms: 500
+  # Auto-recover a wedged stream by restarting its connection (fixes a stuck/laggy
+  # camera ~95% of the time). A per-camera watchdog tears the pipeline down and
+  # brings it back up; the other cameras keep running while it reconnects. 0 = off.
+  reconnect_stuck_ms: 3000  # no decoded frame arrives for this long -> reconnect
+  reconnect_lag_ms: 2000    # frames keep arriving but trail real time by more than
+                            # this, sustained -> reconnect (0 = don't reconnect on lag)
 
 fusion:
   enabled: true
-  merge_distance_m: 1.5   # detections this close (across cameras) = same person
+  merge_distance_m: 1.6   # detections this close (across cameras) = same person
   match_gate_m: 1.8       # max a person can move between frames to keep its ID
   max_age_s: 1.5          # keep a global track this long while unseen (occlusion)
   smoothing: 0.35          # position EMA: higher = snappier, lower = smoother
