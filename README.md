@@ -100,6 +100,28 @@ fill in the broker settings, and copy `.env.example` to `.env` with
 messages to `output.mqtt.topic`, under `smx/device/...` by default, so existing
 subscribers on `smx/device/#` can consume them.
 
+### Face blur in previews (privacy)
+
+The preview camera windows (and `--headless` snapshots) can blur every face so a
+shoulder-surfer or a saved screenshot never exposes identities. This is
+**preview-only**: the frames fed to the person detector, homography and fusion
+are untouched, so tracking accuracy is unchanged. Faces are detected with the
+[`deface`](https://github.com/ORB-HD/deface) library's CenterFace model
+(`pip install deface`, in `requirements.txt`; the model ships bundled).
+
+Configure it under `output.blur_faces` in `config.yaml`:
+
+- `method` — `blur` | `pixelate` | `solid`
+- `threshold` — face-detection confidence (default `0.2`; kept low because
+  small/far faces score low)
+- `det_size` — detector resolution; **`0` = full frame** (best for small faces),
+  a positive value caps the long side for speed
+- `ellipse`, `mask_scale`, `mosaicsize` — blur shape/size
+
+If `deface` isn't installed, face blur simply stays off and tracking runs
+normally. Full-resolution detection is the biggest CPU cost of the preview — if
+previews get slow, set a `det_size` (e.g. `960`) or turn `blur_faces` off.
+
 ## Synchronisation (NTP) — why one person isn't two
 
 Cameras have different end-to-end latency (measured here: ~120 ms on one camera,
@@ -197,3 +219,4 @@ before. See `src/groundblob.py`.
 | `src/pointcloud_plan.py` | top-down map rendered from the `.las` scan |
 | `src/floorplan.py` | DXF floorplan render (legacy `source: dxf`) |
 | `src/visualizer.py` | annotated camera-view overlay |
+| `src/face_blur.py` | `deface`/CenterFace face blur for privacy-preserving previews |

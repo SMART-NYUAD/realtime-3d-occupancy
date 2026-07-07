@@ -18,6 +18,8 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 echo "==> Installing remaining requirements"
 pip install -r requirements.txt
+# (Preview face-blur uses the `deface` package from requirements.txt; its
+#  CenterFace model ships bundled, so no separate weight download is needed.)
 
 # ---- Expose system PyGObject (gi) + GStreamer to the venv --------------------
 # NTP-synchronized RTSP capture (src/gst_stream.py) needs PyGObject, which ships

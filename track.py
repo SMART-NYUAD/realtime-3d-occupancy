@@ -25,6 +25,7 @@ from detector import PersonTracker                             # noqa: E402
 from geometry import load_homography, image_to_floor, foot_point  # noqa: E402
 from groundblob import bbox_floor_polygon                       # noqa: E402
 from visualizer import draw_camera_view                        # noqa: E402
+from face_blur import FaceBlurrer                              # noqa: E402
 from plan import load_plan                                     # noqa: E402
 from fusion import Fusion                                      # noqa: E402
 from env import load_env                                        # noqa: E402
@@ -95,6 +96,9 @@ def main():
                           reconnect_lag_s=scfg.get("reconnect_lag_ms", 0) / 1000.0)
 
     show_cams = cfg["output"].get("show_camera_windows", True)
+    # Privacy: blur faces in the preview/snapshot frames only (not the frames the
+    # detector/homography see). No-op unless output.blur_faces.enabled.
+    blurrer = FaceBlurrer(cfg["output"].get("blur_faces", {}))
     draw_trails = cfg["output"]["draw_track_trails"]
     trail_len = int(cfg["output"]["trail_length"])
     trails = defaultdict(lambda: deque(maxlen=trail_len))   # key: (cam_name, id)
@@ -162,7 +166,7 @@ def main():
             all_people.extend(people)
 
             if show_cams or headless:
-                view = draw_camera_view(frame, people)
+                view = draw_camera_view(blurrer.blur(frame), people)
                 cv2.putText(view, f"{name}: {len(people)} people", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, colors[name], 2)
                 view = cv2.resize(view, (640, 360))
