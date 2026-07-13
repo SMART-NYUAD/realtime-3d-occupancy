@@ -23,3 +23,6 @@ topdown.png
 *.pt
 *.onnx
 *.engine
+
+cinematic.mp4
+cinematic.py
