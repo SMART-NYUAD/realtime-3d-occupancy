@@ -119,7 +119,12 @@ def _det(n, F, w2p, occl=0):
 def _fuse(dets, blob):
     f = Fusion(merge_distance_m=1.2, match_gate_m=1.8, use_blob=blob,
                blob_merge_gate_m=3.0)
-    return f.update(dets, now=1.0)
+    # Tracks must survive n_init frames before they're reported (kills flicker
+    # ghosts); the same static detections are stable, so drive n_init frames.
+    out = []
+    for k in range(f.n_init):
+        out = f.update(dets, now=1.0 + 0.03 * k)
+    return out
 
 
 def test_clean_unbiased(F, w2p):
@@ -164,8 +169,83 @@ def test_no_over_merge(F, w2p):
     print("PASS distinct people not over-merged")
 
 
+# --- pose foot estimation + uncertainty-weighted fusion ---------------------
+
+def test_foot_from_pose():
+    from geometry import foot_from_pose
+    box = (600, 200, 700, 560)          # ~360 px tall standing person
+    # Full COCO-17 skeleton, upright, ankles at y=555.
+    kxy = np.zeros((17, 2)); kconf = np.ones(17)
+    kxy[5], kxy[6] = (610, 260), (690, 260)     # shoulders
+    kxy[11], kxy[12] = (615, 380), (685, 380)   # hips
+    kxy[13], kxy[14] = (615, 470), (685, 470)   # knees
+    kxy[15], kxy[16] = (615, 555), (685, 555)   # ankles
+
+    # Ankles visible -> foot at their midpoint, tight sigma.
+    (fx, fy), sig, src = foot_from_pose(kxy, kconf, box)
+    assert src == "ankles" and abs(fy - 555) < 1 and abs(fx - 650) < 1, (fx, fy, src)
+    ank_sig = sig
+
+    # Hide the ankles -> extrapolate from the knees, and be LESS certain.
+    kconf[15] = kconf[16] = 0.0
+    (fx, fy), sig, src = foot_from_pose(kxy, kconf, box)
+    assert src == "knees", src
+    assert fy > 470 and sig > ank_sig, (fy, sig, ank_sig)   # reaches below knees, wider
+
+    # Hide the knees too -> extrapolate down the torso from hips/shoulders.
+    kconf[13] = kconf[14] = 0.0
+    (fx, fy), sig, src = foot_from_pose(kxy, kconf, box)
+    assert src == "hips" and fy > 380 and sig > ank_sig, (fy, sig, src)
+
+    # Nothing usable -> box bottom, most uncertain.
+    kconf[:] = 0.0
+    (fx, fy), sig, src = foot_from_pose(kxy, kconf, box)
+    assert src == "box" and fy == 560, (fy, src)
+    print("PASS foot_from_pose: ankles->knees->hips->box, sigma grows with reach")
+
+
+def test_sigma_weighting_pulls_to_confident_foot():
+    """A confident-but-occluded detection (large foot sigma) must NOT drag the dot
+    off a camera that sees the ankles (small sigma), even at equal box confidence."""
+    dets = [
+        {"cam": "a", "id": 1, "world": (5.0, 5.0), "conf": 0.8,
+         "foot_sigma_m": 0.05, "floor_poly": None},          # sees ankles
+        {"cam": "b", "id": 9, "world": (6.0, 5.0), "conf": 0.8,
+         "foot_sigma_m": 0.9,  "floor_poly": None},          # occluded, drifted
+    ]
+    f = Fusion(merge_distance_m=1.6, match_gate_m=1.8, smoothing=1.0,
+               use_blob=False, sigma_weighting=True, conf_drop_ratio=0.0,
+               dup_suppress_m=0.0, max_speed_mps=0.0)
+    out = []
+    for k in range(f.n_init):
+        out = f.update(dets, now=1.0 + 0.03 * k)
+    assert len(out) == 1, out
+    x = out[0]["world"][0]
+    assert x < 5.05, f"inverse-variance mean should sit at the tight foot, got x={x:.3f}"
+    print(f"PASS sigma weighting: fused x={x:.3f} (pinned to the ankle-visible camera)")
+
+
+def test_duplicate_suppression():
+    """A second detection near an existing track must not spawn a duplicate dot."""
+    a = {"cam": "a", "id": 1, "world": (5.0, 5.0), "conf": 0.8,
+         "foot_sigma_m": 0.1, "floor_poly": None}
+    # a stray same-frame detection 0.6 m away (inside dup_suppress_m), different cam
+    b = {"cam": "b", "id": 2, "world": (5.6, 5.0), "conf": 0.8,
+         "foot_sigma_m": 0.1, "floor_poly": None}
+    f = Fusion(merge_distance_m=0.3, match_gate_m=0.4, use_blob=False,
+               dup_suppress_m=1.0)
+    out = []
+    for k in range(f.n_init + 1):
+        out = f.update([a, b], now=1.0 + 0.03 * k)
+    assert len(out) == 1, f"dup within suppress radius must not spawn a 2nd dot: {out}"
+    print("PASS duplicate suppression: near-by detection did not spawn a 2nd dot")
+
+
 if __name__ == "__main__":
     test_convex_intersection()
+    test_foot_from_pose()
+    test_sigma_weighting_pulls_to_confident_foot()
+    test_duplicate_suppression()
     Hs = _load()
     if Hs is not None:
         test_polygon_shape(Hs)

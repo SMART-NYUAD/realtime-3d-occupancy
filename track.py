@@ -22,7 +22,7 @@ sys.path.insert(0, "src")
 from capture import list_cameras                               # noqa: E402
 from stream import CameraStream                                # noqa: E402
 from detector import PersonTracker                             # noqa: E402
-from geometry import load_homography, image_to_floor, foot_point  # noqa: E402
+from geometry import load_homography, image_to_floor, foot_point, foot_from_pose  # noqa: E402
 from groundblob import bbox_floor_polygon                       # noqa: E402
 from visualizer import draw_camera_view                        # noqa: E402
 from face_blur import FaceBlurrer                              # noqa: E402
@@ -95,6 +95,7 @@ def main():
                           reconnect_stuck_s=scfg.get("reconnect_stuck_ms", 3000) / 1000.0,
                           reconnect_lag_s=scfg.get("reconnect_lag_ms", 0) / 1000.0)
 
+    kp_conf = float(cfg["detector"].get("kp_conf", 0.5))
     show_cams = cfg["output"].get("show_camera_windows", True)
     # Privacy: blur faces in the preview/snapshot frames only (not the frames the
     # detector/homography see). No-op unless output.blur_faces.enabled.
@@ -117,7 +118,15 @@ def main():
     fuser = Fusion(fcfg.get("merge_distance_m", 0.6), fcfg.get("match_gate_m", 1.0),
                    fcfg.get("max_age_s", 1.5), fcfg.get("smoothing", 0.5),
                    use_blob=use_blob,
-                   blob_merge_gate_m=fcfg.get("blob_merge_gate_m", 2.5)) if fuse_on else None
+                   blob_merge_gate_m=fcfg.get("blob_merge_gate_m", 2.5),
+                   conf_weighting=fcfg.get("conf_weighting", True),
+                   conf_drop_ratio=fcfg.get("conf_drop_ratio", 0.5),
+                   sigma_weighting=fcfg.get("sigma_weighting", True),
+                   blob_min_sigma_m=fcfg.get("blob_min_sigma_m", 0.15),
+                   n_init=fcfg.get("n_init", 3),
+                   max_age_tentative_s=fcfg.get("max_age_tentative_s", 0.4),
+                   dup_suppress_m=fcfg.get("dup_suppress_m", 1.0),
+                   max_speed_mps=fcfg.get("max_speed_mps", 2.5)) if fuse_on else None
     show_raw = fcfg.get("show_raw_dots", False)
 
     headless = args.headless > 0.0
@@ -144,8 +153,20 @@ def main():
                 p["cam"] = name
                 p["world"] = None
                 p["floor_poly"] = None
+                p["foot_sigma_m"] = None
                 if H is not None:
-                    fx, fy = foot_point(p["bbox"])
+                    # Occlusion-robust foot point: from pose keypoints when the
+                    # detector is a pose model (with a per-detection uncertainty),
+                    # else the plain box bottom.
+                    kxy, kconf = p.get("kxy"), p.get("kconf")
+                    if kxy is not None and kconf is not None:
+                        (fx, fy), sig_px, src = foot_from_pose(
+                            kxy, kconf, p["bbox"], kp_thresh=kp_conf)
+                    else:
+                        fx, fy = foot_point(p["bbox"])
+                        sig_px, src = 0.5 * (p["bbox"][3] - p["bbox"][1]), "box"
+                    p["foot_px"] = (fx, fy)
+                    p["foot_source"] = src
                     w = image_to_floor(H, fx, fy)
                     # Discard detections that project outside the usable room area.
                     # This catches real detections whose occluded/clipped foot point
@@ -154,6 +175,13 @@ def main():
                         w = None
                     p["world"] = w
                     if w is not None:
+                        # Turn the pixel uncertainty into meters via the homography
+                        # (project a sigma-displaced foot point): distance-aware for
+                        # free -- the same pixel error is more meters when far away.
+                        w2 = image_to_floor(H, fx, fy + sig_px)
+                        p["foot_sigma_m"] = (
+                            float(np.clip(np.hypot(w2[0] - w[0], w2[1] - w[1]),
+                                          0.03, 2.0)) if w2 is not None else 0.5)
                         trails[(name, p["id"])].append(w)
                         if use_blob:
                             p["floor_poly"] = bbox_floor_polygon(
@@ -260,12 +288,21 @@ def main():
             if (cv2.waitKey(1) & 0xFF) == ord("q"):
                 break
 
+    # --- shutdown ---
+    print("shutting down ...", flush=True)
     if group is not None:
         group.release()
     for s in streams.values():
         s.release()
     mqtt_pub.stop()
     cv2.destroyAllWindows()
+    cv2.waitKey(1)          # let HighGUI actually process the window close
+    sys.stdout.flush()
+    # Everything above has been torn down cleanly. On Jetson the GStreamer /
+    # NVDEC (and ONNX) native thread pools don't always join at interpreter
+    # exit, which prints "terminate called without an active exception" and
+    # hangs the terminal. Exit hard so that can't happen.
+    os._exit(0)
 
 
 if __name__ == "__main__":

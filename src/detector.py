@@ -17,7 +17,9 @@ class PersonTracker:
     def track(self, frame):
         """Run detection + tracking on one BGR frame.
 
-        Returns a list of dicts: {id, bbox:(x1,y1,x2,y2), conf}.
+        Returns a list of dicts: {id, bbox:(x1,y1,x2,y2), conf}. With a pose model
+        (yolo11*-pose.pt) each dict also carries {kxy:(17,2), kconf:(17,)} COCO
+        keypoints, which the caller turns into an occlusion-robust foot point.
         """
         results = self.model.track(
             frame,
@@ -39,10 +41,19 @@ class PersonTracker:
         xyxy = boxes.xyxy.cpu().numpy()
         ids = boxes.id.cpu().numpy().astype(int)
         confs = boxes.conf.cpu().numpy()
-        for (x1, y1, x2, y2), tid, c in zip(xyxy, ids, confs):
-            out.append({
+        # Pose models add keypoints, row-aligned with the boxes. Absent for a plain
+        # detection model -> caller falls back to the box bottom.
+        kobj = getattr(results[0], "keypoints", None)
+        kxy_all = kobj.xy.cpu().numpy() if (kobj is not None and kobj.xy is not None) else None
+        kcf_all = kobj.conf.cpu().numpy() if (kobj is not None and kobj.conf is not None) else None
+        for i, ((x1, y1, x2, y2), tid, c) in enumerate(zip(xyxy, ids, confs)):
+            d = {
                 "id": int(tid),
                 "bbox": (float(x1), float(y1), float(x2), float(y2)),
                 "conf": float(c),
-            })
+            }
+            if kxy_all is not None and i < len(kxy_all) and kcf_all is not None:
+                d["kxy"] = kxy_all[i]
+                d["kconf"] = kcf_all[i]
+            out.append(d)
         return out

@@ -242,8 +242,20 @@ class SyncCameraStream:
                     "buffered": len(self._buf), "last_t": self._last_t}
 
     def release(self):
+        # Stop the watchdog first so it can't resurrect the pipeline mid-teardown,
+        # and take _build_lock so we don't race a restart already in flight.
         self._running = False
-        self.pipe.set_state(Gst.State.NULL)
+        with self._build_lock:
+            try:
+                self.pipe.set_state(Gst.State.NULL)
+                # NULL is asynchronous (rtspsrc returns ASYNC); block until the
+                # streaming threads have actually stopped, else they get destroyed
+                # while still joinable at interpreter exit -> "terminate called
+                # without an active exception" and a hang. Bounded so a wedged
+                # stream can't block shutdown forever.
+                self.pipe.get_state(3 * Gst.SECOND)
+            except Exception as e:
+                print(f"[{self.name}] release error: {e}", flush=True)
 
 
 # ---- live self-test: python src/gst_stream.py [config.yaml] [decoder] [protocol] --

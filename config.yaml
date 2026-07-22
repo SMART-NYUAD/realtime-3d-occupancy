@@ -30,7 +30,13 @@ camera_defaults:
   flip_method: 0
 
 detector:
-  model: "yolo11m.pt"     # auto-downloaded. n=fast, s/m/l=more accurate
+  # POSE model (…-pose.pt): also emits COCO-17 keypoints, so the foot point comes
+  # from the ankles (or, when the legs are occluded, is extrapolated from the
+  # hips/shoulders and flagged uncertain) instead of the box bottom. This is what
+  # stops "confident but occluded" detections from putting a person at the waist.
+  # A plain detection model (yolo11m.pt) still works — it just falls back to the
+  # box bottom with no per-detection uncertainty.
+  model: "yolo11m-pose.pt"  # auto-downloaded. n=fast, s/m/l=more accurate
   # Keep this LOW. In Ultralytics this conf filters detections BEFORE ByteTrack
   # sees them, so a high value disables ByteTrack's low-score recovery stage and
   # makes people flicker out on confidence dips. Let the thresholds in
@@ -40,6 +46,9 @@ detector:
   imgsz: 640
   device: "cuda:0"        # "cuda:0" on Thor GPU, or "cpu"
   tracker: "bytetrack.yaml"   # repo-local ByteTrack config (./bytetrack.yaml)
+  kp_conf: 0.5           # min per-keypoint visibility to trust an ankle/hip/etc.
+                         # (pose models only). Higher = fall back to extrapolation
+                         # sooner; lower = trust marginal keypoints.
 
 floorplan:
   # The top-down map = the shared world frame (meters, origin at the bbox min
@@ -112,7 +121,43 @@ fusion:
   match_gate_m: 1.8       # max a person can move between frames to keep its ID
   max_age_s: 1.5          # keep a global track this long while unseen (occlusion)
   smoothing: 0.35          # position EMA: higher = snappier, lower = smoother
-  show_raw_dots: false    # also draw faint per-camera dots behind fused markers
+  show_raw_dots: true    # also draw faint per-camera dots behind fused markers
+
+  # --- localization-uncertainty fusion (preferred) ---
+  # Each detection carries a foot-point sigma (meters): tight when the ankles are
+  # visible, large when the feet were extrapolated through occlusion. A cluster's
+  # position is the INVERSE-VARIANCE weighted mean of its members, so an occluded
+  # (high-sigma) view barely moves the dot even when YOLO was confident about it.
+  # This is what box confidence alone could not catch.
+  sigma_weighting: true
+  # Only fall back to the blob-trapezoid intersection when the feet are genuinely
+  # uncertain (fused sigma above this). When a camera sees the ankles clearly, the
+  # weighted point beats the trapezoid, so leave it alone.
+  blob_min_sigma_m: 0.15
+
+  # --- legacy confidence weighting (secondary; sigma_weighting supersedes it) ---
+  conf_weighting: true    # used only if sigma_weighting is false
+  # Relative dominance drop, still applied on top: discard a member whose box
+  # confidence is below this fraction of the cluster's best. Keep MODEST -- near
+  # 1.0 it drops almost every second camera and strands the blob intersection
+  # (which needs >=2 trapezoids), re-exposing the occluded point. 0 disables.
+  conf_drop_ratio: 0.5
+
+  # --- track lifecycle gates (kill duplicate dots and single-frame drags) ---
+  # A new global track must be matched this many frames before it's shown. Flicker
+  # from a briefly-occluded/ghost detection never survives long enough to appear.
+  n_init: 3
+  # Unconfirmed (still-tentative) tracks age out this fast, so ghosts vanish
+  # quickly instead of lingering for the full max_age.
+  max_age_tentative_s: 0.4
+  # Don't BIRTH a new track within this distance of an existing one -- that's
+  # almost always the same person localized a second way (a duplicate dot), not a
+  # new person. Keep below the spacing of distinct people. 0 disables.
+  dup_suppress_m: 1.0
+  # A person can't teleport: cap how far a marker may move per second. A single
+  # drifted (occluded) observation then only nudges the dot and it recovers next
+  # frame, instead of being dragged across the room. 0 disables.
+  max_speed_mps: 2.5
 
   # Ground-plane blob intersection. Instead of fusing each camera's single foot
   # point, project each detection's bbox to a floor *trapezoid* of foot-point
