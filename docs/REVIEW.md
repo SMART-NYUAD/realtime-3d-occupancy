@@ -121,3 +121,52 @@ it); it breaks when the room changes vs the scan. Most work; kept as a
 
 Suggested order: R1 → R2 → R3, with R4/R5 as checks/fallbacks, and
 `recalibrate.py` as the manual override.
+
+## 7. Literature check: expected accuracy of the calibration roadmap
+
+Sensitivity for this room (our own arithmetic): camera ~2.7 m high, f ≈ 670 px
+at 1920 px / 110°. A 1° error in camera tilt moves a floor point ~10 cm at 3 m
+and ~30 cm at 6 m. **Rotation accuracy decides floor accuracy**: staying under
+~10 cm across the room needs ≲0.3°. Distortion must be removed first, because a
+homography is only exact on an undistorted (pinhole) image.
+
+| Method | Expected floor error here | Data / time | Effort | Role |
+|---|---|---|---|---|
+| R1 Intrinsics (handheld checkerboard, or refine inside R5) | prerequisite | 30 s per camera, once | small | do first |
+| R2 Reference-frame registration, rotation-only `K R K⁻¹` after undistortion | **< 3–5 cm** for bumps/pan/tilt; degrades with translation (parallax) | 1 frame, ms | 1–2 days | always-on tamper detection + correction |
+| R5 Register to splat/scan (render from the current pose → MASt3R/LightGlue → PnP) | **~5–20 cm** (0.3–0.7°), only if splat renders are good from the ceiling viewpoints | seconds per camera | 1–2 weeks | re-anchor after big moves; replaces the clicked homographies |
+| R3a Pedestrians across synced cameras | ~5–15 cm relative to the reference camera (inherits its error) | < 1 min of one walker; minutes with crowds | 3–5 days | continuous consistency monitor + refinement |
+| R3b Single-camera from people's heights | 3–5 % of distance (15–40 cm at 6 m); **cannot give x, y, yaw on the map** | minutes–hours | medium | sanity check of tilt/height only |
+| R4 Walked-area ↔ map alignment | ~20–50 cm (no published benchmark), occasional gross failures | days | medium | weak prior / plausibility check |
+| Deep single-image calibration (GeoCalib) | pitch error ~0.9–1.9° → 30–60 cm at 6 m | 1 image | small | too coarse for extrinsics |
+
+Key evidence:
+- SuperPoint+LightGlue registers planar views to ~1 px; a bump that is pure
+  rotation is exactly a homography, so this is the most accurate way to correct one.
+- GS-CPR (ICLR 2025): 0.8 cm / 0.25° and GSplatLoc (2024): 1.4 cm / 0.37° on
+  7-Scenes, but with hand-held, walking-height queries. The closest match to
+  our case (YOWO 2025, ceiling cameras against a walking-height model):
+  **1.2 m average error without a pose prior, 0.21–0.26 m / 0.6–0.7° with one.**
+  We always have a prior (the current calibration), which is why R5 is viable.
+- Pedestrian-based extrinsics (Truong et al., Sensors 2019): 1.3–3 cm
+  triangulation error in controlled/kitchen scenes from < 1 min of walking;
+  much worse with small, far-away pedestrians. NTP jitter on consumer cameras
+  (≈50–200 ms, not measured here) is 7–28 cm at walking speed, so use
+  interpolated tracks or moments when people stand still.
+- Single-view people methods: Brouwers 2016 reports ≤ 3.7 % metric error on
+  real data; CasCalib 2024 ~11 % focal-length error; the classic
+  vanishing-point baselines in Xu et al. 2020 fail badly (19–89°) with few people.
+- Yi cameras switch to IR/greyscale at night: keep separate day and IR
+  reference frames for R2.
+
+Revised order: **R1 → R2 (always on) → R5 (re-anchor, validate splat renders
+at each camera pose first) → R3a (monitor: re-calibrate when the same person's
+position differs by more than ~20–25 cm between cameras)**. R3b and R4 are
+checks only.
+
+References: GeoCalib https://arxiv.org/abs/2409.06704 · Truong et al. 2019
+https://pmc.ncbi.nlm.nih.gov/articles/PMC6891296/ · GS-CPR https://arxiv.org/abs/2408.11085 ·
+GSplatLoc https://arxiv.org/abs/2409.16502 · YOWO https://arxiv.org/abs/2511.16521 ·
+CasCalib https://arxiv.org/abs/2405.06845 · Xu/Roy/Kitani 2020 https://arxiv.org/abs/1912.05758 ·
+Brouwers 2016 https://mlanthology.org/eccv/2016/brouwers2016eccv-automatic/ ·
+LightGlue https://arxiv.org/abs/2306.13643 · Reloc3r https://arxiv.org/abs/2412.08376
