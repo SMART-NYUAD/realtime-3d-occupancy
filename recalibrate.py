@@ -22,22 +22,19 @@ import argparse
 import json
 import math
 import os
-import sys
 import time
 
 import cv2
 import numpy as np
-import yaml
 
-sys.path.insert(0, "src")
-from capture import list_cameras                               # noqa: E402
-from stream import CameraStream                                # noqa: E402
-from detector import PersonTracker                             # noqa: E402
-from geometry import compute_homography, image_to_floor, foot_point  # noqa: E402
-from plan import load_plan                                     # noqa: E402
-
-CAM_COLORS = [(0, 200, 255), (0, 255, 0), (255, 120, 0),
-              (255, 0, 255), (0, 165, 255), (200, 200, 0)]
+from tracker3d.capture import CameraStream
+from tracker3d.config import list_cameras, load_config
+from tracker3d.detector import MultiCamDetector
+from tracker3d.geometry import (compute_homography, foot_from_pose, foot_point,
+                                load_calibration_meta, save_calibration)
+from tracker3d.plan import load_plan
+from tracker3d.privacy import PrivacyMasker
+from tracker3d.render import CAM_COLORS
 HIT_PX = 14            # click tolerance for grabbing a point
 
 S = {
@@ -66,8 +63,8 @@ def save_all(cams, refs_path):
     for cam in cams:
         n = cam["name"]
         if S["H"][n] is not None:
-            np.save(cam["homography_file"], S["H"][n])
-            json.dump({"pairs": S["pairs"][n]}, open(f"{n}_calib.json", "w"), indent=2)
+            save_calibration(cam["homography_file"], S["H"][n], S["imsize"][n],
+                             pairs=S["pairs"][n])
             saved.append(n)
     print(f"[saved] homographies+points for {saved}, refs -> {refs_path}")
 
@@ -86,22 +83,24 @@ def recompute(name):
             return
         errs = []
         for (u, v), (wx, wy) in zip(cam_pts, wld):
-            w = image_to_floor(H, u, v)
-            errs.append(math.hypot(w[0] - wx, w[1] - wy) if w else 9.9)
+            w = H @ np.array([u, v, 1.0])
+            errs.append(math.hypot(w[0] / w[2] - wx, w[1] / w[2] - wy)
+                        if abs(w[2]) > 1e-9 else 9.9)
         S["H"][name], S["err"][name] = H, float(np.mean(errs))
-    except Exception:
+    except (RuntimeError, ValueError, cv2.error):
         S["H"][name], S["err"][name] = None, None
 
 
-def bootstrap(cam, frame, refs_path):
-    """Load <name>_calib.json if present, else reconstruct points from the saved
-    homography by inverse-projecting the shared reference points into the view."""
+def bootstrap(cam, frame):
+    """Load the clicked points from the calibration sidecar if present, else
+    reconstruct them from the saved homography by inverse-projecting the shared
+    reference points into the view."""
     n = cam["name"]
     h, w = frame.shape[:2]
     S["imsize"][n] = (w, h)
-    cf = f"{n}_calib.json"
-    if os.path.exists(cf):
-        S["pairs"][n] = json.load(open(cf)).get("pairs", [])
+    pairs = load_calibration_meta(cam["homography_file"]).get("pairs")
+    if pairs:
+        S["pairs"][n] = [p for p in pairs if p["ref_id"] in S["refs"]]
     elif os.path.exists(cam["homography_file"]) and S["refs"]:
         H = np.load(cam["homography_file"])
         Hinv = np.linalg.inv(H)
@@ -176,29 +175,30 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config.yaml")
     args = ap.parse_args()
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(args.config)
 
     cams = list_cameras(cfg)
     fpc = cfg["floorplan"]
     fp = load_plan(cfg)
-    refs_path = fpc.get("reference_points_file", "reference_points.json")
+    refs_path = fpc.get("reference_points_file", "data/reference_points.json")
     S["refs"] = load_refs(refs_path)
     S["next_id"] = max(S["refs"], default=0)
 
-    streams, trackers, colors = {}, {}, {}
+    streams, colors = {}, {}
     for i, cam in enumerate(cams):
         n = cam["name"]
         colors[n] = CAM_COLORS[i % len(CAM_COLORS)]
         print(f"[{n}] connecting {cam['source']} ...")
         streams[n] = CameraStream(cam)
-        trackers[n] = PersonTracker(cfg)
+    detector = MultiCamDetector(cfg, [c["name"] for c in cams])
+    masker = PrivacyMasker(cfg["output"].get("privacy", {}))
+    kp_conf = float(cfg["detector"].get("kp_conf", 0.5))
     time.sleep(3.0)
     for cam in cams:
-        f = streams[cam["name"]].read()
+        _, f = streams[cam["name"]].read()
         while f is None:
-            time.sleep(0.1); f = streams[cam["name"]].read()
-        bootstrap(cam, f, refs_path)
+            time.sleep(0.1); _, f = streams[cam["name"]].read()
+        bootstrap(cam, f)
 
     fp_cb = make_fp_cb(fp)
     cv2.namedWindow("FLOORPLAN")
@@ -211,29 +211,43 @@ def main():
 
     while True:
         dots = []   # (cam_name, (wx,wy))
+        frames = {}
+        for cam in cams:
+            _, f = streams[cam["name"]].read()
+            if f is not None:
+                frames[cam["name"]] = f
+        results = detector.detect_and_track(frames)
         for cam in cams:
             n = cam["name"]
-            frame = streams[n].read()
-            if frame is None:
+            if n not in frames:
                 continue
-            people = trackers[n].track(frame)
+            frame = frames[n]
+            people, raw = results[n]
             H = S["H"][n]
             for p in people:
-                if H is not None:
+                # Same foot estimate as track.py (pose ankles, else box bottom).
+                if p.get("kxy") is not None:
+                    (fx, fy), _, _ = foot_from_pose(p["kxy"], p["kconf"], p["bbox"], kp_conf)
+                else:
                     fx, fy = foot_point(p["bbox"])
-                    w = image_to_floor(H, fx, fy)
-                    if w and fp.in_bounds(*w):
-                        dots.append((n, w))
+                p["foot"] = (fx, fy)
+                if H is not None:
+                    w = H @ np.array([fx, fy, 1.0])
+                    if abs(w[2]) > 1e-9:
+                        w = (w[0] / w[2], w[1] / w[2])
+                        if fp.in_bounds(*w):
+                            dots.append((n, w))
 
             # ---- camera window ----
             w0, h0 = S["imsize"][n]
             s = min(1280 / w0, 720 / h0, 1.0)
             S["scale"][n] = s
             disp = cv2.resize(frame, (int(w0 * s), int(h0 * s)))
+            masker.apply(disp, raw, s, s)
             for p in people:
                 x1, y1, x2, y2 = [int(c * s) for c in p["bbox"]]
                 cv2.rectangle(disp, (x1, y1), (x2, y2), colors[n], 2)
-                cv2.circle(disp, (int((x1 + x2) / 2), y2), 4, (0, 255, 0), -1)
+                cv2.circle(disp, (int(p["foot"][0] * s), int(p["foot"][1] * s)), 4, (0, 255, 0), -1)
             for pr in S["pairs"][n]:
                 u, v = int(pr["cam"][0] * s), int(pr["cam"][1] * s)
                 cv2.circle(disp, (u, v), 7, (0, 0, 255), 2)
@@ -274,9 +288,9 @@ def main():
         elif k == ord("r"):
             S["refs"] = load_refs(refs_path)
             for cam in cams:
-                f = streams[cam["name"]].read()
+                _, f = streams[cam["name"]].read()
                 if f is not None:
-                    bootstrap(cam, f, refs_path)
+                    bootstrap(cam, f)
             print("  reloaded from disk")
 
     for s in streams.values():

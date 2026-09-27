@@ -1,6 +1,6 @@
-"""Tests for ground-plane blob intersection (src/groundblob.py + Fusion).
+"""Core tests: geometry, ground-blob intersection, fusion, detector glue, privacy.
 
-Run:  .venv/bin/python test_groundblob.py
+Run:  .venv/bin/python tests/test_core.py
 Uses the repo's real homographies (yi01, yi04) so the geometry is exercised on
 actual calibrations, including yi04 whose homogeneous scale is negative on the
 floor (a sign trap the projector must handle).
@@ -10,19 +10,20 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "src")
-from groundblob import (bbox_floor_polygon, convex_intersection,      # noqa: E402
-                        polygon_centroid, intersect_blobs)
-from fusion import Fusion                                             # noqa: E402
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+from tracker3d.groundblob import (bbox_floor_polygon, convex_intersection,      # noqa: E402
+                        polygon_centroid)
+from tracker3d.fusion import Fusion                                             # noqa: E402
 
-W, H_IMG = 1280, 720
+W, H_IMG = 1920, 1080          # the resolution the homographies were calibrated at
 CAMS = ("yi01", "yi04")
 
 
 def _load():
     Hs = {}
     for n in CAMS:
-        p = f"{n}_homography.npy"
+        p = os.path.join(ROOT, "calib", f"{n}_homography.npy")
         if not os.path.exists(p):
             print(f"SKIP geometry tests: {p} not found")
             return None
@@ -55,9 +56,11 @@ def test_polygon_shape(Hs):
     poly = bbox_floor_polygon(H, box, (W, H_IMG))
     assert poly is not None and len(poly) == 4, "yi04 floor must project (sign-robust)"
 
-    # A clipped box (feet off-frame) must make a longer trapezoid than a tidy one.
-    visible = bbox_floor_polygon(H, (600, 250, 700, 540), (W, H_IMG))
-    clipped = bbox_floor_polygon(H, (600, 250, 700, 719), (W, H_IMG))
+    # The SAME box must reach further toward the camera when it touches the frame
+    # bottom (feet off-frame) than when the frame extends below it.
+    box = (600, 500, 700, H_IMG - 1)
+    visible = bbox_floor_polygon(H, box, (W, H_IMG + 400))
+    clipped = bbox_floor_polygon(H, box, (W, H_IMG))
 
     def depth(p):
         return np.linalg.norm(p[0] - p[3])  # far-left -> near-left edge
@@ -172,7 +175,7 @@ def test_no_over_merge(F, w2p):
 # --- pose foot estimation + uncertainty-weighted fusion ---------------------
 
 def test_foot_from_pose():
-    from geometry import foot_from_pose
+    from tracker3d.geometry import foot_from_pose
     box = (600, 200, 700, 560)          # ~360 px tall standing person
     # Full COCO-17 skeleton, upright, ankles at y=555.
     kxy = np.zeros((17, 2)); kconf = np.ones(17)
@@ -214,7 +217,7 @@ def test_sigma_weighting_pulls_to_confident_foot():
          "foot_sigma_m": 0.9,  "floor_poly": None},          # occluded, drifted
     ]
     f = Fusion(merge_distance_m=1.6, match_gate_m=1.8, smoothing=1.0,
-               use_blob=False, sigma_weighting=True, conf_drop_ratio=0.0,
+               use_blob=False, conf_drop_ratio=0.0,
                dup_suppress_m=0.0, max_speed_mps=0.0)
     out = []
     for k in range(f.n_init):
@@ -241,13 +244,85 @@ def test_duplicate_suppression():
     print("PASS duplicate suppression: near-by detection did not spawn a 2nd dot")
 
 
+# --- geometry: calibration persistence, rescale, horizon --------------------
+
+def test_projector_rescale_and_horizon(Hs):
+    from tracker3d.geometry import FloorProjector
+    H = Hs["yi04"]
+    ref = FloorProjector(H, (W, H_IMG)); ref.set_frame_size(W, H_IMG)
+    half = FloorProjector(H, (W, H_IMG)); half.set_frame_size(W // 2, H_IMG // 2)
+    a = ref.to_floor(900, 800)
+    b = half.to_floor(450, 400)          # same scene point in a half-res frame
+    assert a is not None and np.allclose(a, b, atol=1e-6), (a, b)
+    # yi04's horizon crosses the top of the frame (~v 80-140 px): a pixel above it
+    # must be rejected, not projected to a mirrored point behind the camera.
+    assert ref.to_floor(100, 5) is None, ref.to_floor(100, 5)
+    print("PASS FloorProjector: resolution rescale + horizon rejection")
+
+
+def test_homography_fit_and_loo():
+    from tracker3d.geometry import compute_homography, fit_errors, project
+    Htrue = np.array([[0.01, 0.002, -3.0], [0.001, 0.02, -5.0], [0.0, 0.0008, 1.0]])
+    rng = np.random.default_rng(0)
+    img = rng.uniform([0, 400], [1900, 1070], size=(8, 2))
+    wld = np.array([project(Htrue, *p) for p in img])
+    H = compute_homography(img, wld)
+    assert np.allclose(project(H, 960, 700), project(Htrue, 960, 700), atol=1e-6)
+    ins, loo = fit_errors(img, wld)
+    assert ins.max() < 1e-6 and len(loo) == 8 and loo.max() < 1e-4
+    # 4 points: exact fit, in-sample error is ~0 and there is no LOO estimate.
+    ins4, loo4 = fit_errors(img[:4], wld[:4])
+    assert ins4.max() < 1e-6 and len(loo4) == 0
+    print("PASS homography fit (LSQ <6 pts, RANSAC in meters >=6) + leave-one-out error")
+
+
+# --- detector glue: ByteTrack index mapping ---------------------------------
+
+def test_bytetrack_global_index():
+    """A track kept alive by a LOW-score detection must map back to that
+    detection's index in the full list (upstream numbers the low subset from 0,
+    which attached another person's keypoints to the track)."""
+    from tracker3d.detector import _ByteTracker, _Dets
+    from ultralytics.utils import YAML, IterableSimpleNamespace
+    args = IterableSimpleNamespace(**YAML.load(os.path.join(ROOT, "bytetrack.yaml")))
+    tr = _ByteTracker(args)
+    A = [100, 100, 200, 400]
+    B = [800, 100, 900, 400]
+    for _ in range(3):                                   # establish two tracks
+        tr.update(_Dets(np.array([A, B], np.float32), np.array([0.9, 0.9], np.float32)))
+    # Next frame: B is confident (idx 0), A drops to a low score (idx 1).
+    out = tr.update(_Dets(np.array([B, A], np.float32), np.array([0.9, 0.2], np.float32)))
+    by_x = {int(r[0]) // 100: int(r[-1]) for r in out}
+    assert by_x.get(1) == 1 and by_x.get(8) == 0, f"index mix-up: {out[:, [0, 4, 7]]}"
+    print("PASS ByteTrack reports global detection indices (low-score stage too)")
+
+
+# --- privacy mask -----------------------------------------------------------
+
+def test_privacy_masks_head_only():
+    from tracker3d.privacy import PrivacyMasker
+    img = np.tile(np.arange(200, dtype=np.uint8)[None, :, None], (400, 1, 3)).copy()
+    orig = img.copy()
+    kxy = np.zeros((17, 2)); kcf = np.zeros(17)
+    kxy[0], kxy[1], kxy[2] = (100, 60), (92, 52), (108, 52); kcf[:3] = 0.9
+    det = {"bbox": (60, 30, 140, 380), "kxy": kxy, "kconf": kcf}
+    PrivacyMasker({"method": "solid"}).apply(img, [det])
+    assert (img[55, 100] == 0).all(), "face centre must be masked"
+    assert (img[300, 100] == orig[300, 100]).all(), "body must be untouched"
+    print("PASS privacy mask covers the head from pose keypoints only")
+
+
 if __name__ == "__main__":
     test_convex_intersection()
     test_foot_from_pose()
     test_sigma_weighting_pulls_to_confident_foot()
     test_duplicate_suppression()
+    test_homography_fit_and_loo()
+    test_bytetrack_global_index()
+    test_privacy_masks_head_only()
     Hs = _load()
     if Hs is not None:
+        test_projector_rescale_and_horizon(Hs)
         test_polygon_shape(Hs)
         test_short_box_reaches_nearer(Hs)
         F, w2p = _frame()

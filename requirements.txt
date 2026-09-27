@@ -1,13 +1,11 @@
-# Core deps. On Jetson Thor (JetPack R39), torch/torchvision should come from
-# NVIDIA's Jetson wheel index for CUDA support — see setup.sh. ultralytics
-# pulls in numpy/opencv as needed.
-ultralytics>=8.3.0
-lap>=0.5.12
+# Core deps. On Jetson Thor (JetPack R39) install torch/torchvision first from
+# the cu130 index (see setup.sh). ultralytics pulls in onnx/tensorrt tooling on
+# the first `tools/export_engine.py` run.
+ultralytics>=8.4.0
+lap>=0.5.12          # ByteTrack assignment
 PyYAML>=6.0
 numpy>=1.24
 opencv-python>=4.8
-laspy>=2.5           # read the .las lab scan -> top-down calibration map
-ezdxf>=1.1           # read the legacy DXF floorplan (source: dxf)
-paho-mqtt>=2.0       # publish position snapshots to MQTT
+laspy>=2.5           # read the .las lab scan -> top-down world map
+paho-mqtt>=2.0       # publish positions to MQTT
 python-dotenv>=1.0   # load MQTT credentials from .env
-deface>=1.5          # CenterFace face blur for privacy-preserving previews

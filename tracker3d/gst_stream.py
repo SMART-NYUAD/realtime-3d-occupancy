@@ -185,7 +185,13 @@ class SyncCameraStream:
         cap_t = self._ntp_by_pts.pop(buf.pts, None)
         if cap_t is not None:
             self._with_ntp += 1
-            self._ntp_seen = True
+            if not self._ntp_seen:
+                # First RTCP sender report: frames buffered so far carry ARRIVAL
+                # time (a later clock than NTP capture time). Drop them so the
+                # buffer never mixes the two clocks (wrong order, bad alignment).
+                with self._lock:
+                    self._buf.clear()
+                self._ntp_seen = True
         else:
             self._missing_ntp += 1
             # An NTP stream hitting a dropout: stamping with arrival time (now) would
@@ -256,45 +262,3 @@ class SyncCameraStream:
                 self.pipe.get_state(3 * Gst.SECOND)
             except Exception as e:
                 print(f"[{self.name}] release error: {e}", flush=True)
-
-
-# ---- live self-test: python src/gst_stream.py [config.yaml] [decoder] [protocol] --
-if __name__ == "__main__":
-    import sys
-    import yaml
-    sys.path.insert(0, "src")
-    from capture import list_cameras
-
-    cfg = yaml.safe_load(open(sys.argv[1] if len(sys.argv) > 1 else "config.yaml"))
-    decoder = sys.argv[2] if len(sys.argv) > 2 else "sw"
-    protocol = sys.argv[3] if len(sys.argv) > 3 else "tcp"
-    cams = list_cameras(cfg)
-    streams = [SyncCameraStream(c, decoder=decoder, protocol=protocol,
-                                drop_on_latency=(protocol != "tcp"),
-                                retransmission=(protocol == "tcp"),
-                                width=c.get("width"), height=c.get("height")) for c in cams]
-    print(f"opened {len(streams)} cameras (decoder={decoder}, protocol={protocol}); warming up...")
-    time.sleep(3.0)
-    try:
-        for _ in range(8):
-            time.sleep(1.0)
-            lasts = {s.name: s.latest_capture_t() for s in streams}
-            have = {n: t for n, t in lasts.items() if t is not None}
-            if len(have) < len(streams):
-                print("waiting for:", [n for n in lasts if lasts[n] is None]); continue
-            # common target = newest time all cameras can cover = min of their latest
-            target = min(have.values())
-            line = []
-            for s in streams:
-                got = s.frame_at(target, tol=0.20)
-                age = (got[0] - target) * 1000 if got else None
-                st = s.stats()
-                line.append(f"{s.name}: lag={(time.time()-have[s.name])*1000:4.0f}ms "
-                            f"match={'%+4.0fms' % age if age is not None else ' miss'} "
-                            f"ntp={st['with_ntp']}/{st['frames']}"
-                            f"{' miss=%d' % st['missing_ntp'] if st['missing_ntp'] else ''}")
-            spread = (max(have.values()) - min(have.values())) * 1000
-            print(f"latest-spread={spread:4.0f}ms | " + " | ".join(line))
-    finally:
-        for s in streams:
-            s.release()

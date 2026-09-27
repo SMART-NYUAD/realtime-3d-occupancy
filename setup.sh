@@ -18,8 +18,6 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 echo "==> Installing remaining requirements"
 pip install -r requirements.txt
-# (Preview face-blur uses the `deface` package from requirements.txt; its
-#  CenterFace model ships bundled, so no separate weight download is needed.)
 
 # ---- Expose system PyGObject (gi) + GStreamer to the venv --------------------
 # NTP-synchronized RTSP capture (src/gst_stream.py) needs PyGObject, which ships
@@ -46,7 +44,11 @@ import ultralytics; print("ultralytics", ultralytics.__version__)
 PY
 
 echo
+echo "==> Building the TensorRT FP16 detector engine (a few minutes, once)"
+python tools/export_engine.py || echo "  engine build failed — track.py will fall back to the .pt (slower)"
+
+echo
 echo "Done. Next:"
 echo "  source .venv/bin/activate"
-echo "  python calibrate.py        # set up floor coordinates"
-echo "  python track.py            # run real-time tracking"
+echo "  python calibrate.py --camera <name>   # set up floor coordinates"
+echo "  python track.py                       # run real-time tracking"

@@ -19,6 +19,10 @@ __pycache__/
 *.topdown.npz
 topdown.png
 
+# Headless snapshots
+floor_map.png
+cameras.png
+
 # YOLO / detector weights (large; auto-downloaded or built locally)
 *.pt
 *.onnx

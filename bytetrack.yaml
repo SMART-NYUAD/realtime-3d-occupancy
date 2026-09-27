@@ -14,6 +14,6 @@ tracker_type: bytetrack # (str) Tracker backend: bytetrack
 track_high_thresh: 0.35 # (float) First-stage match threshold; confident boxes
 track_low_thresh: 0.1   # (float) Second-stage low-score recovery; sustains tracks through dips
 new_track_thresh: 0.4   # (float) Min score to START a new track; high enough to avoid spurious tracks
-track_buffer: 75        # (int) Frames to keep a lost track alive (~2.5s @30fps) to ride out flicker/occlusion
+track_buffer: 50        # (int) PROCESSED frames (not camera frames) to keep a lost track: ~2.5 s at the ~20 FPS loop
 match_thresh: 0.8       # (float) Association similarity (IoU/cost) threshold
-fuse_score: True        # (bool) Fuse detection score with motion/IoU; stabilizes weak detections
+fuse_score: False       # (bool) MUST stay False: Ultralytics also fuses in the low-score stage (cost 1-IoU*score vs a 0.5 gate), so with True a box below track_high_thresh can never match and the recovery stage above is dead

@@ -12,24 +12,26 @@ GStreamer (see gst_stream.py); RTSP/H.264 sources only.
 """
 import time
 
-from gst_stream import SyncCameraStream
+from .gst_stream import SyncCameraStream
 
 
 class SyncGroup:
-    def __init__(self, cams, decoder="sw", tol_s=0.075, buffer_sec=1.0, latency_ms=100,
-                 lag_budget_s=0.5, protocol="tcp", drop_on_latency=False,
-                 retransmission=True, reconnect_stuck_s=3.0, reconnect_lag_s=0.0):
+    def __init__(self, cams, scfg):
+        """cams: merged camera dicts; scfg: the `sync:` block of config.yaml."""
         self.streams = {
-            c["name"]: SyncCameraStream(c, decoder=decoder, buffer_sec=buffer_sec,
-                                        latency_ms=latency_ms, protocol=protocol,
-                                        drop_on_latency=drop_on_latency,
-                                        retransmission=retransmission,
-                                        reconnect_stuck_s=reconnect_stuck_s,
-                                        reconnect_lag_s=reconnect_lag_s)  # native resolution
-            for c in cams
+            c["name"]: SyncCameraStream(
+                c, decoder=scfg.get("decoder", "hw"),
+                buffer_sec=scfg.get("buffer_sec", 1.0),
+                latency_ms=scfg.get("latency_ms", 100),
+                protocol=scfg.get("protocol", "udp"),
+                drop_on_latency=scfg.get("drop_on_latency", True),
+                retransmission=scfg.get("retransmission", False),
+                reconnect_stuck_s=scfg.get("reconnect_stuck_ms", 3000) / 1000.0,
+                reconnect_lag_s=scfg.get("reconnect_lag_ms", 2000) / 1000.0)
+            for c in cams                                 # native resolution
         }
-        self.tol = float(tol_s)
-        self.lag_budget = float(lag_budget_s)
+        self.tol = scfg.get("tol_ms", 75) / 1000.0
+        self.lag_budget = scfg.get("lag_budget_ms", 500) / 1000.0
         self._last_target = 0.0
 
     def next_aligned(self, wait=True, timeout=2.0):
@@ -38,7 +40,10 @@ class SyncGroup:
         lagging more than `lag_budget` behind the most-live one is treated as stuck
         and excluded from pacing, so it can't drag every camera back to its time
         (which freezes them once the gap exceeds the per-camera buffer). Cameras
-        lacking a frame within tol of the target are omitted. (None, {}) on timeout."""
+        lacking a frame within tol of the target are omitted. Values are
+        (capture_t, frame) so the caller can tell a re-served frame from a new
+        one; frames are shared with the capture buffer — never draw on them.
+        (None, {}) on timeout."""
         t0 = time.time()
         while True:
             lasts = {}
@@ -57,7 +62,7 @@ class SyncGroup:
                     for n, s in self.streams.items():
                         got = s.frame_at(target, self.tol)
                         if got is not None:
-                            frames[n] = got[1]
+                            frames[n] = got
                     return target, frames
             if not wait or time.time() - t0 > timeout:
                 return None, {}

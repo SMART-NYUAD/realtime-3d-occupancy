@@ -2,41 +2,39 @@
 # people_tracker_3d configuration  (multi-camera)
 # ============================================================
 
-# Every camera maps people into the SAME floorplan frame via its own
-# homography. Add/remove cameras here; calibrate each with:
-#   python calibrate.py --camera <name>
+# Every camera maps people into the SAME floor-map frame via its own
+# homography (calib/<name>_homography.npy + .json sidecar). Add/remove cameras
+# here; calibrate each with:  python calibrate.py --camera <name>
 cameras:
   - name: yi01
     source: "rtsp://192.168.50.72/ch0_0.h264"
-    homography_file: "yi01_homography.npy"
+    homography_file: "calib/yi01_homography.npy"
   - name: yi04
     source: "rtsp://192.168.50.198/ch0_0.h264"
-    homography_file: "yi04_homography.npy"
+    homography_file: "calib/yi04_homography.npy"
   - name: yi05
     source: "rtsp://192.168.50.68/ch0_0.h264"
-    homography_file: "yi05_homography.npy"
+    homography_file: "calib/yi05_homography.npy"
 
 # Defaults applied to every camera (override per-camera by adding the key above).
 camera_defaults:
-  # source forms: "rtsp://.../ch0_0.h264" | "usb:0" | "csi:0" | "/path/video.mp4"
+  # source forms: "rtsp://.../ch0_0.h264" | "usb:0" | "/path/video.mp4"
+  # RTSP streams are decoded at native resolution (NVDEC, see `sync:`); the
+  # width/height/fps below only apply to USB cameras.
   width: 1280
   height: 720
   fps: 30
-  # RTSP only: Jetson GStreamer hardware H.264 decode (lower CPU). false = FFMPEG.
-  rtsp_hw_decode: false
-  # CSI only:
-  csi_sensor_width: 1920
-  csi_sensor_height: 1080
-  flip_method: 0
 
 detector:
   # POSE model (…-pose.pt): also emits COCO-17 keypoints, so the foot point comes
   # from the ankles (or, when the legs are occluded, is extrapolated from the
   # hips/shoulders and flagged uncertain) instead of the box bottom. This is what
   # stops "confident but occluded" detections from putting a person at the waist.
-  # A plain detection model (yolo11m.pt) still works — it just falls back to the
-  # box bottom with no per-detection uncertainty.
-  model: "yolo11m-pose.pt"  # auto-downloaded. n=fast, s/m/l=more accurate
+  # The pose keypoints also drive the privacy mask (heads), so no face model runs.
+  #
+  # On the Thor use the TensorRT FP16 engine (~3x faster than PyTorch). Build it
+  # once with:  python tools/export_engine.py   (falls back to the .pt if missing)
+  model: "yolo11m-pose.engine"
   # Keep this LOW. In Ultralytics this conf filters detections BEFORE ByteTrack
   # sees them, so a high value disables ByteTrack's low-score recovery stage and
   # makes people flicker out on confidence dips. Let the thresholds in
@@ -45,27 +43,21 @@ detector:
   iou: 0.5
   imgsz: 640
   device: "cuda:0"        # "cuda:0" on Thor GPU, or "cpu"
+  half: true              # FP16 (PyTorch weights only; an engine's precision is fixed at export)
+  max_batch: 4            # all cameras run as one batch (must match the engine's export batch)
   tracker: "bytetrack.yaml"   # repo-local ByteTrack config (./bytetrack.yaml)
   kp_conf: 0.5           # min per-keypoint visibility to trust an ankle/hip/etc.
                          # (pose models only). Higher = fall back to extrapolation
                          # sooner; lower = trust marginal keypoints.
 
 floorplan:
-  # The top-down map = the shared world frame (meters, origin at the bbox min
-  # corner). Every camera calibrates into this same frame.
-  #   source: pointcloud -> render a top-down view of the .las lab scan (current)
-  #           dxf        -> rasterize the DXF/BIM plan (legacy; being retired)
-  # NOTE: the two frames differ (origin/orientation/up-axis), so homographies and
-  # reference points do NOT transfer between them — recalibrate after switching.
-  source: pointcloud
+  # The top-down map = the shared world frame (meters, origin at the scan's
+  # footprint min corner), rendered from the lab point-cloud scan. Every camera
+  # calibrates into this frame. NOTE: flip_x/flip_y/clip_percentile/up_axis move
+  # the frame itself — changing them invalidates every calibration.
+  pointcloud_file: "data/smart_lab.las"
   px_per_m: 50          # resolution of the top-down map canvas
-  margin_m: 0.5         # blank border around the plan (meters)
-
-  # --- source: dxf ---
-  file: "SMART-floorplans.dxf"
-
-  # --- source: pointcloud ---
-  pointcloud_file: "smart_lab.las"
+  margin_m: 0.5         # blank border around the map (meters)
   up_axis: auto         # vertical axis: auto | x | y | z (this scan is y-up)
   color_mode: rgb       # rgb = true scan colour | height = colour by height
   rgb_autocontrast: true # rgb mode: stretch the flat indoor greys for visibility
@@ -76,10 +68,10 @@ floorplan:
 
   # Shared floor reference points (world meters) reused across cameras so their
   # calibrations agree. Built up by calibrate.py; snap to existing ones to share.
-  reference_points_file: "reference_points.json"
+  reference_points_file: "data/reference_points.json"
 
   # Usable-room spatial gate. "auto" derives a mask from the rendered top-down
-  # scan/floorplan, so detections projected into empty/outside-map space are
+  # scan, so detections projected into empty/outside-map space are
   # ignored before fusion. You can override with explicit room corners:
   #   valid_area: [[0,0], [8,0], [8,5], [0,5]]
   # Set [] to disable this and use only broad rectangular map bounds.
@@ -93,7 +85,7 @@ floorplan:
 # into a second dot. RTSP/H.264 only; needs system gi+GStreamer (see setup.sh).
 sync:
   enabled: true
-  decoder: hw             # sw=openh264 (portable) | hw=nvv4l2decoder | nvdec=nvh264dec
+  decoder: hw             # hw=nvv4l2decoder (Jetson NVDEC, default) | sw=openh264 | nvdec=nvh264dec
   tol_ms: 75             # a camera's frame must be within this of the target instant
   buffer_sec: 1.0         # per-camera frame history kept for time-alignment
   latency_ms: 100         # rtspsrc jitter buffer
@@ -123,21 +115,16 @@ fusion:
   smoothing: 0.35          # position EMA: higher = snappier, lower = smoother
   show_raw_dots: true    # also draw faint per-camera dots behind fused markers
 
-  # --- localization-uncertainty fusion (preferred) ---
   # Each detection carries a foot-point sigma (meters): tight when the ankles are
   # visible, large when the feet were extrapolated through occlusion. A cluster's
   # position is the INVERSE-VARIANCE weighted mean of its members, so an occluded
   # (high-sigma) view barely moves the dot even when YOLO was confident about it.
-  # This is what box confidence alone could not catch.
-  sigma_weighting: true
   # Only fall back to the blob-trapezoid intersection when the feet are genuinely
   # uncertain (fused sigma above this). When a camera sees the ankles clearly, the
   # weighted point beats the trapezoid, so leave it alone.
   blob_min_sigma_m: 0.15
 
-  # --- legacy confidence weighting (secondary; sigma_weighting supersedes it) ---
-  conf_weighting: true    # used only if sigma_weighting is false
-  # Relative dominance drop, still applied on top: discard a member whose box
+  # Relative dominance drop, applied on top: discard a member whose box
   # confidence is below this fraction of the cluster's best. Keep MODEST -- near
   # 1.0 it drops almost every second camera and strands the blob intersection
   # (which needs >=2 trapezoids), re-exposing the occluded point. 0 disables.
@@ -187,32 +174,21 @@ fusion:
   # up to this looser gate. This is what actually stops the "two dots for one
   # person" split. Keep below the spacing of distinct people to avoid over-merging.
   blob_merge_gate_m: 3.0
-  show_blobs: true        # draw the trapezoids + their intersection on the map
+  show_blobs: false       # draw the trapezoids + their intersection on the map (debug)
 
 output:
-  show_window: true
-  show_camera_windows: true # show each camera's annotated video too (costs FPS)
-  draw_track_trails: false   # true = draw movement path lines; false = dots only
-  trail_length: 30
-  # Privacy: blur faces in the preview/snapshot windows only, using the `deface`
-  # library (CenterFace). The frames fed to the person detector / homography /
-  # fusion are NOT blurred, so tracking is unaffected. `pip install deface` ships
-  # the model bundled — no separate weight file needed.
-  blur_faces:
+  show_window: true          # false = no GUI; positions are printed/published only
+  show_camera_windows: true  # the "cameras" mosaic window (all cameras in one window)
+  preview_width: 640         # width of each camera tile; drawing happens at this size
+  # Privacy: mask every detected person's head in the preview/snapshots only,
+  # located from the pose keypoints (nose/eyes/ears) the detector already
+  # produces — no extra face model, so it costs ~nothing. The frames fed to the
+  # detector are never modified, so tracking is unaffected.
+  privacy:
     enabled: true
-    # Detect faces in a background thread so the preview FPS doesn't wait on the
-    # (CPU-bound, ~100+ ms) face model; the newest boxes are applied to each frame.
-    # false = detect inline (throttles FPS to detection speed).
-    async_detect: true
-    threshold: 0.2            # min face-detection confidence (deface default; low
-                             # on purpose — small/far faces score low)
-    det_size: 0              # detector long side; 0 = full frame resolution (best
-                             # for small faces). >0 caps it for speed, misses more.
-    method: blur             # blur | pixelate | solid
-    ellipse: true            # mask to an oval (natural) instead of the full box
-    mask_scale: 1.3          # grow each face box by this factor before blurring
-    mosaicsize: 20           # pixel block size when method: pixelate
-    # model: ""              # optional path to a custom centerface.onnx
+    method: pixelate         # pixelate | blur | solid
+    scale: 1.3               # grow the head ellipse by this factor
+    kp_thresh: 0.3           # min keypoint confidence to trust a head keypoint
   mqtt:
     enabled: true
     broker: "192.168.50.117"

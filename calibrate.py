@@ -25,12 +25,11 @@ import sys
 
 import cv2
 import numpy as np
-import yaml
 
-sys.path.insert(0, "src")
-from capture import open_capture, get_camera, list_cameras         # noqa: E402
-from plan import load_plan                                         # noqa: E402
-from geometry import compute_homography, save_homography, image_to_floor  # noqa: E402
+from tracker3d.capture import open_capture
+from tracker3d.config import get_camera, list_cameras, load_config
+from tracker3d.geometry import compute_homography, fit_errors, save_calibration
+from tracker3d.plan import load_plan
 
 CAM_WIN = "CAMERA"
 FP_WIN = "FLOORPLAN (gray=other cameras, cyan=new, green=used)"
@@ -149,13 +148,12 @@ def main():
     ap.add_argument("--camera", default=None, help="camera name (default: first)")
     ap.add_argument("--frame", default=None, help="use a saved image instead of live camera")
     args = ap.parse_args()
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(args.config)
 
     cam = get_camera(cfg, args.camera) if args.camera else list_cameras(cfg)[0]
     fpc = cfg["floorplan"]
     fp = load_plan(cfg)
-    refs_path = fpc.get("reference_points_file", "reference_points.json")
+    refs_path = fpc.get("reference_points_file", "data/reference_points.json")
 
     state["refs"], state["next_id"] = load_refs(refs_path)
     print(f"Calibrating '{cam['name']}'  ({cam['source']})")
@@ -229,24 +227,29 @@ def main():
               "Nothing saved. ***")
         return
 
-    H = compute_homography(cam_pts, world_pts)
-    errs, degenerate = [], abs(np.linalg.det(H)) < 1e-9
-    if not degenerate:
-        for (u, v), (wx, wy) in zip(cam_pts, world_pts):
-            w = image_to_floor(H, u, v)
-            if w is None:
-                degenerate = True
-                break
-            errs.append(math.hypot(w[0] - wx, w[1] - wy))
-    if degenerate:
-        print("*** REFUSED: degenerate homography. Re-pick spread-out points. ***")
+    try:
+        H = compute_homography(cam_pts, world_pts)
+        ins, loo = fit_errors(cam_pts, world_pts)
+    except (RuntimeError, ValueError) as e:
+        print(f"*** REFUSED: {e} Nothing saved. ***")
         return
 
-    save_homography(H, cam["homography_file"])
+    h, w = frame.shape[:2]
+    pairs = [{"ref_id": p["ref_id"], "cam": [float(p["cam"][0]), float(p["cam"][1])]}
+             for p in state["pairs"]]
+    save_calibration(cam["homography_file"], H, (w, h), pairs=pairs)
     save_refs(refs_path, state["refs"])
-    print(f"Saved homography for '{cam['name']}' -> {cam['homography_file']}")
+    print(f"Saved homography for '{cam['name']}' -> {cam['homography_file']} ({w}x{h})")
     print(f"Saved {len(state['refs'])} reference points -> {refs_path}")
-    print(f"Mean reprojection error: {np.mean(errs):.3f} m (max {np.max(errs):.3f} m).")
+    print(f"Fit error on the clicked points: mean {ins.mean():.3f} m (max {ins.max():.3f} m)")
+    if len(loo):
+        print(f"Leave-one-out error (how far a NEW floor point lands): "
+              f"mean {loo.mean():.3f} m (max {loo.max():.3f} m)")
+        if loo.mean() > 0.3:
+            print("  ^ high: re-click imprecise points or spread them wider.")
+    else:
+        print("With only 4 points the fit is exact, so its error says nothing — "
+              "add a 5th+ point to get a real accuracy estimate.")
     shared = [p['ref_id'] for p in state['pairs'] if p['ref_id'] not in state['new_ids']]
     if shared:
         print(f"Reused shared references: {sorted(set(shared))} "
@@ -254,8 +257,6 @@ def main():
     else:
         print("NOTE: you created all-new references. For cameras to AGREE, the next "
               "camera should SNAP to these (gray) points in the overlap zone.")
-    if np.mean(errs) > 0.3:
-        print("  ^ error high: use wider, precisely-matched points.")
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ marker survives a few frames of occlusion (coasts at last position).
 import time
 import numpy as np
 
-from groundblob import intersect_blobs, convex_intersection
+from .groundblob import intersect_blobs, convex_intersection
 
 _SIG_MIN = 1e-3   # floor on a foot-estimate sigma (m) so 1/sigma^2 stays finite
 
@@ -45,8 +45,7 @@ class _Track:
 class Fusion:
     def __init__(self, merge_distance_m=0.6, match_gate_m=1.0,
                  max_age_s=1.5, smoothing=0.5, use_blob=False,
-                 blob_merge_gate_m=2.5, conf_weighting=True,
-                 conf_drop_ratio=0.5, sigma_weighting=True,
+                 blob_merge_gate_m=2.5, conf_drop_ratio=0.5,
                  blob_min_sigma_m=0.15, n_init=3, max_age_tentative_s=0.4,
                  dup_suppress_m=1.0, max_speed_mps=2.5, default_sigma_m=0.4):
         self.merge = float(merge_distance_m)
@@ -55,12 +54,9 @@ class Fusion:
         self.s = float(smoothing)
         self.use_blob = bool(use_blob)
         self.blob_gate = float(blob_merge_gate_m)
-        # Position weighting within a cluster. sigma_weighting (preferred) trusts
-        # each foot estimate in inverse proportion to its localization uncertainty
-        # (occluded feet -> large sigma -> tiny weight). conf_* are the older,
-        # box-confidence heuristics, kept as a fallback / secondary drop.
-        self.sigma_weighting = bool(sigma_weighting)
-        self.conf_weighting = bool(conf_weighting)
+        # Members are weighted by inverse foot-sigma variance (occluded feet ->
+        # large sigma -> tiny weight); conf_drop_ratio additionally drops members
+        # whose box confidence is far below the cluster's best (likely false hits).
         self.conf_drop_ratio = float(conf_drop_ratio)
         self.blob_min_sigma = float(blob_min_sigma_m)
         # Track lifecycle gates.
@@ -72,6 +68,20 @@ class Fusion:
         self.tracks = {}
         self.next_id = 1
         self.last_blobs = []   # intersection polygons from the last update (viz)
+
+    @classmethod
+    def from_config(cls, f):
+        """Build from the `fusion:` block of config.yaml."""
+        return cls(f.get("merge_distance_m", 1.6), f.get("match_gate_m", 1.8),
+                   f.get("max_age_s", 1.5), f.get("smoothing", 0.35),
+                   use_blob=f.get("use_blob", True),
+                   blob_merge_gate_m=f.get("blob_merge_gate_m", 3.0),
+                   conf_drop_ratio=f.get("conf_drop_ratio", 0.5),
+                   blob_min_sigma_m=f.get("blob_min_sigma_m", 0.15),
+                   n_init=f.get("n_init", 3),
+                   max_age_tentative_s=f.get("max_age_tentative_s", 0.4),
+                   dup_suppress_m=f.get("dup_suppress_m", 1.0),
+                   max_speed_mps=f.get("max_speed_mps", 2.5))
 
     def _merges(self, o, w, poly):
         """Does detection (point w, trapezoid poly) belong to observation o?
@@ -129,24 +139,19 @@ class Fusion:
         """Collapse a cluster's per-camera detections into one position + a fused
         uncertainty, weighting each camera by how well it can localize the feet.
 
-        Preferred: inverse-variance weighting on the per-detection foot sigma, so a
-        confident-but-occluded view (large sigma) barely moves the dot -- the fix
-        for the case plain box confidence can't see. `conf_drop_ratio` still applies
-        as a secondary relative drop (and nulls dropped trapezoids so they can't
-        veto the blob intersection). A lone detection is passed through unchanged.
+        Inverse-variance weighting on the per-detection foot sigma, so a
+        confident-but-occluded view (large sigma) barely moves the dot.
+        `conf_drop_ratio` is a secondary relative drop (and nulls dropped
+        trapezoids so they can't veto the blob intersection). A lone detection is
+        passed through unchanged.
         """
         pts = np.asarray(o["pts"], dtype=float)
         sig = np.clip(np.asarray(o["sigmas"], dtype=float), _SIG_MIN, None)
         confs = np.asarray(o["confs"], dtype=float)
 
-        if self.sigma_weighting:
-            w = 1.0 / sig**2
-        elif self.conf_weighting:
-            w = confs.copy()
-        else:
-            w = np.ones(len(pts))
+        w = 1.0 / sig**2
 
-        # Secondary: relative confidence dominance drop (kept for continuity).
+        # Secondary: relative confidence dominance drop.
         if self.conf_drop_ratio > 0.0 and len(confs) > 1:
             keep = confs >= self.conf_drop_ratio * confs.max()
             if not keep.any():

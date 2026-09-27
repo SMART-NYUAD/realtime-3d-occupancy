@@ -54,6 +54,9 @@ class MqttPositionPublisher:
 
     def _on_connect(self, _client, _userdata, _flags, rc):
         self._connected = rc == 0
+        # Positions from before a disconnect would produce a bogus speed spike.
+        self._last_seen.clear()
+        self._trails.clear()
         if self._connected:
             print(f"[mqtt] connected to {self.broker}:{self.port}, publishing {self.topic}")
         else:

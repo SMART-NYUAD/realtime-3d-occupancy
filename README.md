@@ -1,134 +1,154 @@
 # people_tracker_3d
 
-Real-time people tracking with **real-world floor coordinates (meters)** on an
-NVIDIA Jetson AGX Thor, using a single RGB camera (USB / CSI / video file).
+Real-time multi-camera people tracking in **real-world floor coordinates
+(meters)** on an NVIDIA Jetson AGX Thor, using ordinary RGB IP cameras.
 
 ## How it works
 
-A normal camera can't measure depth. But people stand on a **flat floor**, so
-the bottom-center of each person's bounding box (their feet) lies on the ground
-plane. A one-time **homography** calibration maps floor pixels → real meters.
+A normal camera can't measure depth, but people stand on a **flat floor**, so
+their feet lie on the ground plane. A one-time **homography** calibration per
+camera maps floor pixels → meters on one shared top-down map.
 
 ```
-  camera frame ─▶ YOLO detect (people) ─▶ ByteTrack (stable IDs)
-                                              │
-                            feet = bottom-center of each box
-                                              │
-                          homography H : image px ─▶ floor (X,Y) m
-                                              │
-                         ┌────────────────────┴───────────────────┐
-                    annotated video                    top-down floor map
+ 3 RTSP cameras ─▶ NVDEC decode + NTP time-alignment (one frame per camera, same instant)
+                          │
+                ONE batched YOLO11-pose pass (TensorRT FP16)
+                          │
+          per-camera ByteTrack ─▶ foot point (ankles, or extrapolated + sigma)
+                          │
+             homography H: image px ─▶ floor (X, Y) m
+                          │
+        cross-camera fusion (inverse-variance + ground-blob intersection)
+                          │
+          ┌───────────────┼──────────────────┐
+     floor map        camera mosaic        MQTT
+                   (heads masked)
 ```
 
-Each tracked person gets: a persistent **ID**, a screen bounding box, and an
-**(X, Y) position in meters** on your floor plan.
+Each person gets a persistent **ID** and an **(X, Y) position in meters**.
 
 ## Setup
 
 ```bash
 cd ~/people_tracker_3d
-./setup.sh
+./setup.sh                 # venv, CUDA PyTorch, deps, GStreamer link, TensorRT engine
 source .venv/bin/activate
 ```
 
-`setup.sh` creates a venv and installs CUDA PyTorch (Jetson wheel) + Ultralytics
-YOLO + OpenCV.
+The detector runs as a **TensorRT FP16 engine** (`yolo11m-pose.engine`). `setup.sh`
+builds it; rebuild it after upgrading Ultralytics/TensorRT or changing
+`detector.imgsz`/`max_batch`:
+
+```bash
+python tools/export_engine.py
+```
+
+If the engine is missing, `track.py` falls back to the `.pt` weights (≈3× slower).
+
+## Repository layout
+
+| path | role |
+|------|------|
+| `track.py` | main real-time loop |
+| `calibrate.py` | click camera↔map point pairs → homography |
+| `recalibrate.py` | live tuner: drag points while watching your tracked dot |
+| `config.yaml` / `bytetrack.yaml` | all settings / tracker thresholds |
+| `tracker3d/` | the library (below) |
+| `tools/` | `export_engine.py` (TensorRT), `check_sync.py` (live skew), `topdown.py` (map PNG) |
+| `tests/test_core.py` | geometry / fusion / tracker-glue / privacy tests |
+| `calib/` | per-camera `<name>_homography.npy` + `.json` sidecar (image size, clicked points) |
+| `data/` | `smart_lab.las` (world map scan), `reference_points.json`, `gs_lod2.sog` (splat, unused yet) |
+| `docs/REVIEW.md` | code review: bugs found/fixed, open issues, roadmap |
+
+`tracker3d/`: `config` (config/env), `capture` (USB/file/FFMPEG), `gst_stream` +
+`sync` (NTP-synced RTSP), `detector` (batched TensorRT + ByteTrack), `geometry`
+(homography, foot point), `localize` (detection → floor), `groundblob` +
+`fusion` (cross-camera merge), `plan` (point-cloud world map), `privacy` (head
+masking), `render` (preview), `mqtt_output`.
 
 ## The world frame (top-down map)
 
-Every camera calibrates into ONE shared **top-down map**, in meters, origin at
-the map's bottom-left corner — so positions are consistent across all cameras.
-
-Two sources can provide that map (`floorplan.source` in `config.yaml`):
-
-- **`pointcloud`** (default) — a top-down view rendered from the lab scan
-  `smart_lab.las`. The scan is Y-up (floor = X-Z plane), so it's projected
-  straight down onto its floor plane in its **true scan colour** (a clean
-  mean-colour orthophoto; `color_mode: height` shades by height instead). This
-  is the up-to-date reference.
-- **`dxf`** — the legacy BIM plan `SMART-floorplans.dxf`. Kept as a fallback;
-  being retired because it's out of date.
-
-Preview the map (and warm its render cache) before calibrating:
+Every camera calibrates into ONE shared top-down map rendered from the lab
+point-cloud scan `data/smart_lab.las` (projected straight down, true scan
+colour; `color_mode: height` shades by height). Meters, origin at the scan
+footprint's min corner. Preview it (and warm its render cache):
 
 ```bash
-python topdown.py --show               # writes topdown.png (true colour)
-python topdown.py --mode height --show # height-shaded instead of true colour
+python tools/topdown.py --show
 ```
 
-> ⚠️ The two sources are **different frames** (origin, orientation and up-axis
-> all differ), so a homography or reference point made against one does **not**
-> transfer to the other. After switching `source`, **recalibrate every camera**
-> (and start a fresh `reference_points.json`).
+> ⚠️ `flip_x`/`flip_y`/`clip_percentile`/`up_axis` move the frame itself — change
+> them and every camera must be recalibrated.
 
-## 1. Configure the camera
+## 1. Configure the cameras
 
-Edit `config.yaml` → `camera.source`:
-- `rtsp://192.168.50.72/ch0_0.h264` → RTSP IP camera (Yi Home)
-- `usb:0` → USB webcam · `csi:0` → Jetson CSI · `/path/video.mp4` → file
-
-Set `geometry.homography_file` to a per-camera name (e.g. `yi01_homography.npy`).
+`config.yaml` → `cameras:` — one entry per camera with its `source`
+(`rtsp://…`, `usb:0` or a video file) and `homography_file`
+(`calib/<name>_homography.npy`).
 
 ## 2. Calibrate (once per camera placement)
 
 ```bash
-python calibrate.py
+python calibrate.py --camera yi01
 ```
-Two windows open — the **camera** and the **floorplan**:
+Two windows open — the **camera** and the **map**:
 - Press **SPACE** to freeze a camera frame.
-- Click a **floor** point in the camera, then click the **same physical spot**
-  on the floorplan. Repeat for **≥4 well-spread points** (room/bench corners,
-  door edges, floor marks).
-- **ENTER** to finish. Saves the homography and prints reprojection error (< 0.3 m good).
+- Click a point on the **map** (a gray shared reference point from another
+  camera, or empty floor to create one), then the **same physical spot** in the
+  camera. Repeat for **≥5 well-spread floor points** (room/bench corners, floor
+  tape marks), ideally including shared points in the overlap with other cameras.
+- **ENTER** to finish. Saves `calib/<name>_homography.npy` + `.json` (image size
+  and the clicked points) and prints two errors:
+  - *fit error* on the clicked points (always ≈0 with exactly 4 points — meaningless),
+  - *leave-one-out error* (needs ≥5 points): how far a NEW floor point will land.
+    < 0.3 m is good.
 
-No tape-measure needed — the map's known scale (point cloud or DXF) supplies the
-meters. On the point-cloud map, pick spots you can also identify in the camera:
-floor/wall corners, bench ends, equipment, the ceiling-beam grid.
+Fine-tune all cameras live afterwards with `python recalibrate.py` (drag points
+until everyone's dot lands on the true spot and the cameras agree; `s` saves).
+
+The calibration records the image size, so a stream delivered at a different
+resolution is rescaled automatically instead of silently mis-projecting.
 
 ## 3. Run real-time tracking
 
 ```bash
-python track.py
+python track.py                      # GUI: "floor map" + "cameras" windows, q quits
+python track.py --headless 60        # no GUI for 60 s, snapshots to /tmp every second
 ```
-Opens two windows: the annotated **camera** view and the **top-down floor map**.
-Press `q` to quit. Set `output.show_window: false` in `config.yaml` to run
-headless and stream coordinates to stdout instead.
+Set `output.show_window: false` to run without a GUI (positions printed each
+second + MQTT). It prints `FPS | detect ms | draw ms` and a `[sync]` health line
+every second.
 
-To publish positions to MQTT, set `output.mqtt.enabled: true` in `config.yaml`,
-fill in the broker settings, and copy `.env.example` to `.env` with
-`MQTT_USERNAME` / `MQTT_PASSWORD`. The tracker publishes TAC-B-style `position`
-messages to `output.mqtt.topic`, under `smx/device/...` by default, so existing
-subscribers on `smx/device/#` can consume them.
+MQTT: set `output.mqtt.enabled: true`, fill in the broker, and copy `.env.example`
+to `.env` with `MQTT_USERNAME` / `MQTT_PASSWORD`. Positions are published as
+TAC-B-style `position` messages to `output.mqtt.topic`.
 
-### Face blur in previews (privacy)
+### Privacy (masked heads in previews)
 
-The preview camera windows (and `--headless` snapshots) can blur every face so a
-shoulder-surfer or a saved screenshot never exposes identities. This is
-**preview-only**: the frames fed to the person detector, homography and fusion
-are untouched, so tracking accuracy is unchanged. Faces are detected with the
-[`deface`](https://github.com/ORB-HD/deface) library's CenterFace model
-(`pip install deface`, in `requirements.txt`; the model ships bundled).
+Every detected person's head is masked (pixelate / blur / solid) in the preview
+windows and snapshots. The head is located from the **pose keypoints the detector
+already computes** (nose/eyes/ears, else the top of the box), so masking costs
+~0 ms and is never stale. It's preview-only: the frames fed to the detector are
+never modified. Coverage follows the detector: any detection above
+`detector.conf` (0.15) is masked, tracked or not; a person the detector misses
+entirely is not. Configure under `output.privacy`.
 
-Configure it under `output.blur_faces` in `config.yaml`:
+(This replaced a separate CenterFace face detector that took ~600 ms per frame on
+the CPU and capped the whole tracker at ~4 FPS.)
 
-- `method` — `blur` | `pixelate` | `solid`
-- `threshold` — face-detection confidence (default `0.2`; kept low because
-  small/far faces score low)
-- `det_size` — detector resolution; **`0` = full frame** (best for small faces),
-  a positive value caps the long side for speed
-- `ellipse`, `mask_scale`, `mosaicsize` — blur shape/size
+## Performance on the Jetson AGX Thor
 
-If `deface` isn't installed, face blur simply stays off and tracking runs
-normally.
+| | before | now |
+|---|---|---|
+| detector | 3× PyTorch FP32 calls, ~46 ms | 1 batched TensorRT FP16 call, ~15 ms |
+| face privacy | CenterFace on CPU, ~600 ms/frame (3 threads, ~8 cores) | pose keypoints, ~0 ms |
+| preview drawing | full-res draw then resize | draw on the 640-px tile |
+| loop rate (3 cams, headless) | 3–5 FPS | ~20–30 FPS (≈ camera rate) |
+| cross-camera skew | 330–450 ms | 40–150 ms |
 
-**Performance.** CenterFace runs on the CPU here (there's no `onnxruntime-gpu`
-wheel for this JetPack, and pip OpenCV's DNN is CPU-only), ~100+ ms per full-res
-frame — too slow to run inline for several cameras (it dropped a live 3-camera
-run to ~0.4 FPS). So detection runs in a **background thread per camera**
-(`async_detect: true`) and the render loop just applies the newest boxes to each
-frame; faces move slowly, so slightly-stale boxes look fine and FPS returns to
-baseline. If it's still too heavy, cap `det_size` (e.g. `960`), raise `threshold`,
-or set `async_detect: false` to detect inline.
+Also run the board in `MAXN` (`sudo nvpmodel -m 0 && sudo jetson_clocks`), and
+keep other CPU-heavy services off the Thor — timings above vary with background
+load.
 
 ## Synchronisation (NTP) — why one person isn't two
 
@@ -147,7 +167,7 @@ skew drops to ~20 ms) before detecting and fusing.
 - RTSP/H.264 sources only; tune in the `sync:` block of `config.yaml`.
 - Needs system **PyGObject + GStreamer** (`setup.sh` links them into the venv;
   it prints the `apt` packages to install if they're missing).
-- `decoder: sw` (openh264) is the portable default; `hw`/`nvdec` use Jetson NVDEC.
+- `decoder: hw` (Jetson NVDEC) is the default; `sw` (openh264) is the portable fallback.
 - `protocol: udp` keeps latency *live*: over `tcp`, packet loss makes the jitter
   buffer ratchet up and never drain, so one camera slowly drifts ~1s behind the
   rest. `drop_on_latency`/`retransmission: false` bound it further. Use `tcp` only
@@ -155,8 +175,8 @@ skew drops to ~20 ms) before detecting and fusing.
 - A camera that still lags more than `lag_budget_ms` behind the most-live one is
   dropped from the aligned set rather than dragging every camera back to its time
   (and freezing them once the gap exceeds `buffer_sec`).
-- Verify the live skew yourself: `python src/gst_stream.py config.yaml <decoder> <protocol>`
-  (e.g. `... config.yaml hw udp`), or watch the `[sync] spread=…` line `track.py`
+- Verify the live skew yourself: `python tools/check_sync.py`
+  or watch the `[sync] spread=…` line `track.py`
   now prints each second.
 
 This addresses lag-induced duplicates. Duplicates from a camera that *can't see
@@ -191,40 +211,26 @@ even more aggressively, scaled by how far its aspect ratio falls below
 `blob_short_aspect`. Two detections merge when their
 trapezoids overlap — not only when their foot points are close — which is what
 actually rejoins the split. Set `fusion.show_blobs: true` to draw the trapezoids
-and their intersection on the top-down map. Trapezoids that don't overlap (e.g.
+and their intersection on the top-down map (debug). Trapezoids that don't overlap (e.g.
 calibration error) fall back to the old point-mean, so it never does harm.
 
 Limits: very heavy occlusion *near the horizon* (a few visible pixels mapping to
 many meters) can drift beyond `blob_merge_gate_m` and still split — no worse than
-before. See `src/groundblob.py`.
+before. See `tracker3d/groundblob.py`.
 
 ## Accuracy notes (monocular limits)
 
 - Floor (X, Y) is solid when feet are visible and the floor is flat.
-- If feet are occluded (behind a desk), the single-point estimate drifts — the
-  box bottom is no longer the real foot point. Multi-camera **blob intersection**
-  (above) recovers it when another camera sees the feet.
-- True height/Z is not measured; only a rough estimate is possible.
-- For centimeter-accurate or multi-floor 3D, use a depth camera (RealSense /
-  ZED / OAK-D) — the detector/tracker stay the same, only `geometry.py` changes
-  to read per-pixel depth instead of a homography.
+- **Lens distortion is not modelled yet.** The Yi cameras are wide-angle with
+  visible barrel distortion, so a single homography is least accurate near the
+  image edges (see `docs/REVIEW.md`, roadmap).
+- If feet are occluded, the pose model extrapolates them (flagged uncertain);
+  multi-camera fusion and blob intersection recover them when another camera
+  sees the feet.
+- True height/Z is not measured.
 
-## Files
+## Tests
 
-| file | role |
-|------|------|
-| `config.yaml` | all settings (incl. `floorplan.source`) |
-| `calibrate.py` | camera↔map point matching → homography |
-| `track.py` | main real-time loop |
-| `topdown.py` | preview/export the top-down map (PNG) |
-| `src/capture.py` | RTSP / USB / CSI / file camera capture (cv2) |
-| `src/gst_stream.py` | NTP-synced RTSP capture (GStreamer, timestamped frames) |
-| `src/sync.py` | align cameras to a common capture instant |
-| `src/detector.py` | YOLO person detect + ByteTrack |
-| `src/geometry.py` | image→world homography math |
-| `src/groundblob.py` | bbox→floor trapezoid + cross-camera blob intersection |
-| `src/plan.py` | shared world↔pixel frame + `load_plan(cfg)` factory |
-| `src/pointcloud_plan.py` | top-down map rendered from the `.las` scan |
-| `src/floorplan.py` | DXF floorplan render (legacy `source: dxf`) |
-| `src/visualizer.py` | annotated camera-view overlay |
-| `src/face_blur.py` | `deface`/CenterFace face blur for privacy-preserving previews |
+```bash
+python tests/test_core.py
+```
