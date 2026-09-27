@@ -59,6 +59,7 @@ If the engine is missing, `track.py` falls back to the `.pt` weights (≈3× slo
 | `calib/` | per-camera `<name>_homography.npy` + `.json` sidecar (image size, clicked points) |
 | `data/` | `smart_lab.las` (world map scan), `reference_points.json`, `gs_lod2.sog` (splat, unused yet) |
 | `docs/REVIEW.md` | code review: bugs found/fixed, open issues, roadmap |
+| `docs/AUTOCALIBRATION_PLAN.md` | plan for automatic multi-camera calibration |
 
 `tracker3d/`: `config` (config/env), `capture` (USB/file/FFMPEG), `gst_stream` +
 `sync` (NTP-synced RTSP), `detector` (batched TensorRT + ByteTrack), `geometry`
