@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛰️ Real-time 3D Occupancy
+# Real-time 3D Occupancy
 
 ### Multi-camera people tracking in real-world floor coordinates
 
@@ -14,44 +14,44 @@
 ![Output](https://img.shields.io/badge/output-MQTT-660066?logo=mqtt&logoColor=white)
 ![FPS](https://img.shields.io/badge/loop-~20--30%20FPS%20(3%20cams)-brightgreen)
 
-[How it works](#-how-it-works) ·
-[Quick start](#-quick-start) ·
-[Calibration](#-calibration) ·
-[Running](#-running-the-tracker) ·
-[Configuration](#%EF%B8%8F-configuration-reference) ·
-[Deep dives](#-deep-dives) ·
-[Troubleshooting](#-troubleshooting)
+[How it works](#how-it-works) ·
+[Quick start](#quick-start) ·
+[Calibration](#calibration) ·
+[Running](#running-the-tracker) ·
+[Configuration](#configuration-reference) ·
+[Deep dives](#deep-dives) ·
+[Troubleshooting](#troubleshooting)
 
 </div>
 
 ---
 
-## 📖 Table of contents
+## Table of contents
 
-1. [Overview](#-overview)
-2. [How it works](#-how-it-works)
-3. [Quick start](#-quick-start)
-4. [The world frame](#%EF%B8%8F-the-world-frame)
-5. [Calibration](#-calibration)
-6. [Running the tracker](#-running-the-tracker)
-7. [MQTT output](#-mqtt-output)
-8. [Configuration reference](#%EF%B8%8F-configuration-reference)
-9. [Deep dives](#-deep-dives)
+1. [Overview](#overview)
+2. [How it works](#how-it-works)
+3. [Quick start](#quick-start)
+4. [The world frame](#the-world-frame)
+5. [Calibration](#calibration)
+6. [Running the tracker](#running-the-tracker)
+7. [MQTT output](#mqtt-output)
+8. [Configuration reference](#configuration-reference)
+9. [Deep dives](#deep-dives)
    - [Foot-point estimation from pose](#1-foot-point-estimation-from-pose)
    - [NTP time-alignment](#2-ntp-time-alignment--why-one-person-isnt-two)
    - [Ground-plane blob intersection](#3-ground-plane-blob-intersection--the-other-half)
    - [Cross-camera fusion & track lifecycle](#4-cross-camera-fusion--track-lifecycle)
    - [Privacy masking](#5-privacy-masking)
-10. [Performance](#-performance-on-jetson-agx-thor)
-11. [Accuracy & limitations](#-accuracy--limitations)
-12. [Repository layout](#-repository-layout)
-13. [Tools & tests](#-tools--tests)
-14. [Troubleshooting](#-troubleshooting)
-15. [Roadmap & further docs](#%EF%B8%8F-roadmap--further-docs)
+10. [Performance](#performance-on-jetson-agx-thor)
+11. [Accuracy & limitations](#accuracy--limitations)
+12. [Repository layout](#repository-layout)
+13. [Tools & tests](#tools--tests)
+14. [Troubleshooting](#troubleshooting)
+15. [Roadmap & further docs](#roadmap--further-docs)
 
 ---
 
-## 🔭 Overview
+## Overview
 
 A single camera can't measure depth — but **people stand on a flat floor**, so
 their feet lie on the ground plane. A one-time **homography** per camera maps
@@ -64,22 +64,22 @@ then gives robust, occlusion-tolerant positions for everyone in the room.
 
 **What you get**
 
-- 🆔 A **persistent global ID** per person, across all cameras
-- 📍 **(X, Y) position in meters** on the lab map
-- 🗺️ Live **floor map** + **camera mosaic** windows
-- 📡 **MQTT** position stream (with trails and speed)
-- 🙈 **Privacy**: heads masked in every preview
+- A **persistent global ID** per person, across all cameras
+- **(X, Y) position in meters** on the lab map
+- Live **floor map** + **camera mosaic** windows
+- **MQTT** position stream (with trails and speed)
+- **Privacy**: heads masked in every preview
 
 </td>
 <td width="50%" valign="top">
 
 **What makes it robust**
 
-- ⏱️ **NTP-synced capture** — all cameras aligned to the same instant
-- 🦵 **Pose-based feet** — survives desks and occluded legs
-- 🔷 **Blob intersection** — cameras that can't see the feet still agree
-- 🧮 **Inverse-variance fusion** — confident views dominate
-- 🚀 **One batched TensorRT pass** for all cameras (~15 ms)
+- **NTP-synced capture** — all cameras aligned to the same instant
+- **Pose-based feet** — survives desks and occluded legs
+- **Blob intersection** — cameras that can't see the feet still agree
+- **Inverse-variance fusion** — confident views dominate
+- **One batched TensorRT pass** for all cameras (~15 ms)
 
 </td>
 </tr>
@@ -87,37 +87,14 @@ then gives robust, occlusion-tolerant positions for everyone in the room.
 
 ---
 
-## 🧠 How it works
+## How it works
 
-```mermaid
-flowchart TD
-    subgraph CAP["📷 Capture"]
-        direction LR
-        C1["yi01<br/>RTSP"]
-        C2["yi04<br/>RTSP"]
-        C3["yi05<br/>RTSP"]
-    end
-
-    CAP --> DEC["🎞️ GStreamer + NVDEC decode<br/>RTCP / NTP timestamps"]
-    DEC --> SYNC["⏱️ Time alignment<br/>one frame per camera, same capture instant"]
-    SYNC --> DET["🧠 ONE batched YOLO11-pose pass<br/>TensorRT FP16 · ~15 ms"]
-    DET --> BT["🔁 Per-camera ByteTrack<br/>stable per-camera IDs"]
-    BT --> FOOT["🦵 Foot point from pose keypoints<br/>+ uncertainty σ"]
-    FOOT --> H["📐 Homography H<br/>image px → floor (X, Y) m"]
-    H --> FUSE["🔗 Cross-camera fusion<br/>inverse-variance + blob intersection"]
-    FUSE --> GT["🆔 Global tracks<br/>persistent ID · smoothed position"]
-
-    GT --> MAP["🗺️ Floor map"]
-    GT --> MOS["🖼️ Camera mosaic<br/>(heads masked)"]
-    GT --> MQ["📡 MQTT"]
-
-    classDef io fill:#1f6feb,stroke:#0b3d91,color:#fff
-    classDef core fill:#76B900,stroke:#3d6000,color:#fff
-    classDef out fill:#8250df,stroke:#4c2889,color:#fff
-    class C1,C2,C3,DEC,SYNC io
-    class DET,BT,FOOT,H,FUSE,GT core
-    class MAP,MOS,MQ out
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/pipeline-dark.svg">
+    <img alt="Processing pipeline: cameras, decode, align, detect, track, localize, fuse, outputs" src="docs/diagrams/pipeline-light.svg" width="100%">
+  </picture>
+</p>
 
 Each loop step, in plain words:
 
@@ -133,7 +110,7 @@ Each loop step, in plain words:
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
 > [!NOTE]
 > Target hardware is an **NVIDIA Jetson AGX Thor** (JetPack R39). Other CUDA
@@ -189,25 +166,18 @@ If the engine is missing, `track.py` falls back to the `.pt` weights (≈ 3× sl
 
 ---
 
-## 🗺️ The world frame
+## The world frame
 
 Every camera calibrates into **one shared top-down map**, rendered from the lab
 point-cloud scan `data/smart_lab.las` (projected straight down, in true scan
 colour — or shaded by height with `color_mode: height`).
 
-```
-      Y (m)
-      ▲
-      │   ┌───────────────────────────────┐
-      │   │  lab point-cloud, top-down    │
-      │   │                               │
-      │   │        ● P1 (3.2, 2.1)        │
-      │   │                  ● P2         │
-      │   │                               │
-      │   └───────────────────────────────┘
-      └──────────────────────────────────────▶ X (m)
-    origin = min corner of the scan footprint
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/world-frame-dark.svg">
+    <img alt="Top-down world frame with origin, axes, valid area and tracked people" src="docs/diagrams/world-frame-light.svg" width="100%">
+  </picture>
+</p>
 
 - **Units:** meters. **Origin:** the scan footprint's min corner.
 - **Valid area:** `floorplan.valid_area: auto` derives a room mask from the scan,
@@ -226,25 +196,17 @@ python tools/topdown.py --mode height --show  # colour by height
 
 ---
 
-## 🎯 Calibration
+## Calibration
 
 Calibration is done **once per camera placement**. It finds the homography that
 maps the camera's floor pixels to the map's meters.
 
-```mermaid
-flowchart LR
-    A["1 · Add camera<br/>to config.yaml"] --> B["2 · calibrate.py<br/>click ≥ 5 point pairs"]
-    B --> C{"Leave-one-out<br/>error < 0.3 m?"}
-    C -- "no" --> B
-    C -- "yes" --> D["3 · recalibrate.py<br/>live fine-tune all cams"]
-    D --> E["4 · track.py 🎉"]
-
-    style A fill:#1f6feb,color:#fff,stroke:#0b3d91
-    style B fill:#1f6feb,color:#fff,stroke:#0b3d91
-    style C fill:#d29922,color:#fff,stroke:#7d5a0f
-    style D fill:#76B900,color:#fff,stroke:#3d6000
-    style E fill:#8250df,color:#fff,stroke:#4c2889
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/calibration-dark.svg">
+    <img alt="Calibration workflow" src="docs/diagrams/calibration-light.svg" width="100%">
+  </picture>
+</p>
 
 ### Step 1 — Configure the cameras
 
@@ -310,7 +272,7 @@ time; drag points until your dot lands on your true spot **and** the cameras agr
 
 ---
 
-## ▶️ Running the tracker
+## Running the tracker
 
 ```bash
 python track.py                         # GUI: "floor map" + "cameras" windows, q quits
@@ -344,7 +306,7 @@ Every second the console prints a status line and a sync-health line:
 
 ---
 
-## 📡 MQTT output
+## MQTT output
 
 Enable under `output.mqtt` and put credentials in `.env`:
 
@@ -386,7 +348,7 @@ history on reconnect, so there's no bogus speed spike after an outage.
 
 ---
 
-## ⚙️ Configuration reference
+## Configuration reference
 
 All settings live in [`config.yaml`](config.yaml) (commented in detail) and
 tracker thresholds in [`bytetrack.yaml`](bytetrack.yaml).
@@ -415,15 +377,13 @@ tracker thresholds in [`bytetrack.yaml`](bytetrack.yaml).
 | `pointcloud_file` | `data/smart_lab.las` | Lab scan |
 | `px_per_m` | `50` | Map canvas resolution |
 | `margin_m` | `0.5` | Blank border |
-| `up_axis` | `auto` | Vertical axis of the scan ⚠️ |
+| `up_axis` | `auto` | Vertical axis of the scan |
 | `color_mode` | `rgb` | `rgb` or `height` |
 | `ceiling_trim_m` | `0.4` | Drop the top of the scan so the ceiling doesn't hide the floor |
-| `clip_percentile` | `0.2` | Trim stray points on the footprint edges ⚠️ |
-| `flip_x` / `flip_y` | `true` / `false` | Mirror the map ⚠️ |
+| `clip_percentile` | `0.2` | Trim stray points on the footprint edges |
+| `flip_x` / `flip_y` | `true` / `false` | Mirror the map |
 | `reference_points_file` | `data/reference_points.json` | Shared calibration points |
-| `valid_area` | `auto` | Room mask; or explicit corners `[[x,y], …]`; `[]` disables |
-
-⚠️ = moves the world frame → recalibrate every camera.
+| `valid_area` | `auto` | Room mask; or explicit corners `[[x,y], …]`; `[]` disables | = moves the world frame → recalibrate every camera.
 
 </details>
 
@@ -483,7 +443,7 @@ tracker thresholds in [`bytetrack.yaml`](bytetrack.yaml).
 | `privacy.method` | `pixelate` | `pixelate` · `blur` · `solid` |
 | `privacy.scale` | `1.3` | Grow the head ellipse |
 | `privacy.kp_thresh` | `0.3` | Min head-keypoint confidence |
-| `mqtt.*` | — | See [MQTT output](#-mqtt-output) |
+| `mqtt.*` | — | See [MQTT output](#mqtt-output) |
 
 </details>
 
@@ -503,7 +463,7 @@ tracker thresholds in [`bytetrack.yaml`](bytetrack.yaml).
 
 ---
 
-## 🔬 Deep dives
+## Deep dives
 
 ### 1. Foot-point estimation from pose
 
@@ -511,18 +471,12 @@ The box bottom is only the feet when the feet are visible. The pose model gives
 17 COCO keypoints, so the tracker walks down a **fallback ladder** and attaches
 an uncertainty **σ** that grows with how much it had to guess:
 
-```mermaid
-flowchart TD
-    S(["Detection + 17 keypoints"]) --> A{"Both ankles<br/>visible?"}
-    A -- yes --> A2["🟢 ankles<br/>midpoint · σ ≈ 4% box h"]
-    A -- no --> B{"One ankle?"}
-    B -- yes --> B2["🟢 ankle<br/>σ ≈ 7% box h"]
-    B -- no --> K{"Knees + hips?"}
-    K -- yes --> K2["🟡 knees<br/>knee + (knee − hip) · σ ≈ 35% thigh"]
-    K -- no --> H{"Hips + shoulders?"}
-    H -- yes --> H2["🟠 hips<br/>hip + 1.7 × torso · σ ≈ 40% reach"]
-    H -- no --> X["🔴 box<br/>bottom-center · σ = 50% box h"]
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/foot-point-dark.svg">
+    <img alt="Foot-point fallback ladder with uncertainty per source" src="docs/diagrams/foot-point-light.svg" width="100%">
+  </picture>
+</p>
 
 The foot point goes through the homography to meters, and σ goes along with it —
 so fusion knows an occluded, extrapolated foot is **much less trustworthy** than
@@ -539,21 +493,12 @@ person at **different moments** — and if those positions differ by more than
 carries an RTCP capture timestamp on a shared clock. The tracker buffers a second
 of frames per camera and lines them up to a **common capture instant**.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Y1 as yi01 (~120 ms latency)
-    participant Y4 as yi04 (~430 ms latency)
-    participant S as SyncGroup (1 s buffer)
-    participant T as track.py
-
-    Note over Y1,Y4: Both capture at t = 10.000 s (NTP clock)
-    Y1->>S: frame @ 10.000 (arrives 10.120)
-    Y4->>S: frame @ 10.000 (arrives 10.430)
-    T->>S: next_aligned()
-    S-->>T: {yi01 @ 10.000, yi04 @ 10.000} ✅ same instant
-    Note over T: skew ≈ 20–150 ms instead of 330–450 ms
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/sync-dark.svg">
+    <img alt="Latest-frame fusion versus NTP-aligned capture" src="docs/diagrams/sync-light.svg" width="100%">
+  </picture>
+</p>
 
 - Needs **RTSP/H.264** sources and system **PyGObject + GStreamer** (`setup.sh` links them).
 - `protocol: udp` keeps latency *live*: over `tcp`, packet loss makes the jitter
@@ -574,16 +519,12 @@ With `fusion.use_blob: true`, each detection's box is projected to a **floor
 trapezoid** of possible foot positions, and the person is placed where the
 cameras' trapezoids **overlap**:
 
-```
-   camera that SEES the feet              camera that CAN'T (occluded / clipped)
-   ─────────────────────────              ──────────────────────────────────────
-   short trapezoid at the feet            long trapezoid reaching toward the camera
-                                          "the feet are somewhere in here"
-              ╲   ╱                                 ╲         ╱
-               ╲ ╱        ◀── intersection ──▶       ╲       ╱
-                ▀           collapses onto the         ╲     ╱
-                            true foot position           ╲ ╱
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/blob-dark.svg">
+    <img alt="Top-down view of two camera trapezoids and their overlap" src="docs/diagrams/blob-light.svg" width="100%">
+  </picture>
+</p>
 
 - Occlusion only ever makes the foot look *too far*, so the trapezoid reaches
   mostly **toward the camera** (`blob_near_frac`), barely past the box (`blob_far_frac`).
@@ -596,29 +537,22 @@ cameras' trapezoids **overlap**:
 
 ### 4. Cross-camera fusion & track lifecycle
 
-```mermaid
-flowchart LR
-    D["All detections<br/>(every camera)"] --> CL["1 · Cluster<br/>distance ≤ merge_distance_m<br/>OR trapezoids overlap"]
-    CL --> RS["2 · Resolve position<br/>inverse-variance mean (1/σ²)<br/>→ blob intersection if σ high"]
-    RS --> MT["3 · Match to tracks<br/>nearest within match_gate_m<br/>speed-capped"]
-    MT --> LC["4 · Lifecycle<br/>birth · confirm · age out"]
-    LC --> O["Global people<br/>ID + (X, Y)"]
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/fusion-dark.svg">
+    <img alt="Four fusion steps: cluster, resolve, match, lifecycle" src="docs/diagrams/fusion-light.svg" width="100%">
+  </picture>
+</p>
 
 Each global track moves through a small state machine that kills **flicker
 ghosts** and **duplicate dots**:
 
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> Tentative: new cluster, not near a track
-    Tentative --> Confirmed: matched n_init frames
-    Tentative --> [*]: unseen > max_age_tentative_s
-    Confirmed --> Confirmed: matched, smoothed
-    Confirmed --> Coasting: not seen this frame
-    Coasting --> Confirmed: matched again
-    Coasting --> [*]: unseen > max_age_s
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/lifecycle-dark.svg">
+    <img alt="Global track lifecycle state machine" src="docs/diagrams/lifecycle-light.svg" width="100%">
+  </picture>
+</p>
 
 Only **confirmed** tracks are drawn and published.
 
@@ -638,47 +572,54 @@ the CPU and capped the whole tracker at ~4 FPS.
 
 ---
 
-## ⚡ Performance on Jetson AGX Thor
+## Performance on Jetson AGX Thor
 
 | | Before | Now | Gain |
 |---|---|---|:-:|
 | **Detector** | 3× PyTorch FP32 calls, ~46 ms | 1 batched TensorRT FP16 call, ~15 ms | **~3×** |
 | **Face privacy** | CenterFace on CPU, ~600 ms/frame | pose keypoints, ~0 ms | **∞** |
-| **Preview drawing** | full-res draw, then resize | draw on the 640-px tile | ✅ |
+| **Preview drawing** | full-res draw, then resize | draw on the 640-px tile | |
 | **Loop rate** (3 cams, headless) | 3–5 FPS | **~20–30 FPS** (≈ camera rate) | **~5×** |
 | **Cross-camera skew** | 330–450 ms | 40–150 ms | **~4×** |
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/performance-dark.svg">
+    <img alt="Before/after: loop rate, detector latency, cross-camera skew" src="docs/diagrams/performance-light.svg" width="100%">
+  </picture>
+</p>
 
 > Timings vary with background load — run in MAXN and keep other heavy services off the Thor.
 
 ---
 
-## 📏 Accuracy & limitations
+## Accuracy & limitations
 
-| | Status |
+| Scenario | Status |
 |---|---|
-| ✅ Floor (X, Y) with visible feet on a flat floor | Solid |
-| ✅ Feet occluded in one camera, visible in another | Recovered by fusion + blob intersection |
-| 🟡 Feet occluded in **all** cameras | Extrapolated from pose, flagged uncertain |
-| 🟡 Heavy occlusion near the horizon | Few pixels → many meters; can still split beyond `blob_merge_gate_m` |
-| 🔴 Lens distortion | **Not modelled yet** — wide-angle Yi cameras have barrel distortion, so error grows toward image edges |
-| 🔴 Height / Z | Not measured |
+| Floor (X, Y) with visible feet on a flat floor | Solid |
+| Feet occluded in one camera, visible in another | Recovered by fusion + blob intersection |
+| Feet occluded in **all** cameras | Extrapolated from pose, flagged uncertain |
+| Heavy occlusion near the horizon | Few pixels → many meters; can still split beyond `blob_merge_gate_m` |
+| Lens distortion | **Not modelled yet** — wide-angle Yi cameras have barrel distortion, so error grows toward image edges |
+| Height / Z | Not measured |
 
 ---
 
-## 📂 Repository layout
+## Repository layout
 
 ```text
 people_tracker_3d/
-├── track.py               ▶ main real-time loop
-├── calibrate.py           🎯 click camera ↔ map point pairs → homography
-├── recalibrate.py         🎛️ live tuner: drag points while watching your dot
-├── config.yaml            ⚙️ all settings
-├── bytetrack.yaml         🔁 per-camera tracker thresholds
-├── setup.sh               📦 one-shot install for Jetson Thor
+├── track.py                 main real-time loop
+├── calibrate.py             click camera ↔ map point pairs → homography
+├── recalibrate.py           live tuner: drag points while watching your dot
+├── config.yaml              all settings
+├── bytetrack.yaml           per-camera tracker thresholds
+├── setup.sh                 one-shot install for Jetson Thor
 ├── requirements.txt
-├── .env.example           🔑 MQTT credentials template
+├── .env.example             MQTT credentials template
 │
-├── tracker3d/             📚 the library
+├── tracker3d/               the library
 │   ├── config.py            config + .env loading
 │   ├── capture.py           USB / file / FFMPEG capture (non-synced path)
 │   ├── gst_stream.py        GStreamer RTSP + NVDEC + RTCP/NTP timestamps
@@ -698,17 +639,18 @@ people_tracker_3d/
 │   ├── check_sync.py        measure live cross-camera skew
 │   └── topdown.py           render the world map to PNG
 │
-├── calib/                 📐 <cam>_homography.npy + .json sidecar
-├── data/                  🗺️ smart_lab.las · reference_points.json · gs_lod2.sog
-├── tests/test_core.py     🧪 geometry / fusion / tracker-glue / privacy tests
+├── calib/                   <cam>_homography.npy + .json sidecar
+├── data/                    smart_lab.las · reference_points.json · gs_lod2.sog
+├── tests/test_core.py       geometry / fusion / tracker-glue / privacy tests
 └── docs/
     ├── REVIEW.md            code review: bugs fixed, open issues, roadmap
-    └── AUTOCALIBRATION_PLAN.md
+    ├── AUTOCALIBRATION_PLAN.md
+    └── diagrams/            README figures (python docs/diagrams/build.py)
 ```
 
 ---
 
-## 🧰 Tools & tests
+## Tools & tests
 
 | Command | Purpose |
 |---------|---------|
@@ -719,7 +661,7 @@ people_tracker_3d/
 
 ---
 
-## 🩺 Troubleshooting
+## Troubleshooting
 
 <details>
 <summary><b>One person shows up as two dots</b></summary>
@@ -779,12 +721,12 @@ It still runs through the detector but contributes no floor positions.
 
 ---
 
-## 🛣️ Roadmap & further docs
+## Roadmap & further docs
 
-- 📝 [`docs/REVIEW.md`](docs/REVIEW.md) — full code review: bugs found and fixed,
+- [`docs/REVIEW.md`](docs/REVIEW.md) — full code review: bugs found and fixed,
   open issues, and the calibration roadmap (lens distortion is the biggest
   remaining error source).
-- 🤖 [`docs/AUTOCALIBRATION_PLAN.md`](docs/AUTOCALIBRATION_PLAN.md) — plan for
+- [`docs/AUTOCALIBRATION_PLAN.md`](docs/AUTOCALIBRATION_PLAN.md) — plan for
   **automatic multi-camera calibration**.
 
 <div align="center">
