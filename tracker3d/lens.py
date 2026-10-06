@@ -105,7 +105,26 @@ def _pinhole_path(obj, img, size, stages, K=None, D=None):
     return r
 
 
+class _single_thread:
+    """Run OpenCV single-threaded inside the block. Each calibration solve is a
+    small problem; spread over all 14 Jetson cores (busy with the tracker) the
+    threads mostly wait on each other: 13 s per solve vs 0.5 s on one thread."""
+
+    def __enter__(self):
+        self._n = cv2.getNumThreads()
+        cv2.setNumThreads(1)
+
+    def __exit__(self, *exc):
+        cv2.setNumThreads(self._n)
+
+
 def solve_intrinsics(obj_list, img_list, image_size, model="standard"):
+    """Single-threaded wrapper around _solve_intrinsics (see there)."""
+    with _single_thread():
+        return _solve_intrinsics(obj_list, img_list, image_size, model)
+
+
+def _solve_intrinsics(obj_list, img_list, image_size, model="standard"):
     """Solve K + distortion from per-view board correspondences.
 
     model: "standard" (k1 k2 p1 p2 k3), "rational" (adds k4-k6, for stronger
