@@ -30,3 +30,8 @@ cameras.png
 
 cinematic.mp4
 cinematic.py
+# Lens-calibration board recordings (contain people) and generated board files
+calib/intrinsics_frames/
+charuco_*.pdf
+charuco_*.png
+lens_check_*.jpg

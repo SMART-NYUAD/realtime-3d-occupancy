@@ -13,6 +13,10 @@ points (in floorplan meters). When you calibrate a camera:
 Collect >=4 correspondences spread as widely as the camera sees (big quad!).
 Shared points should sit in the OVERLAP zone between cameras.
 
+If the camera has an `intrinsics_file` (tools/calib_intrinsics.py), the camera
+window shows the LENS-CORRECTED image and the homography is fitted on corrected
+pixels. --frame always takes a raw (uncorrected) saved frame.
+
 Usage:
     python calibrate.py --camera <name> [--config config.yaml] [--frame img.jpg]
 Camera window:  SPACE freeze | u undo | ENTER finish | q quit
@@ -29,6 +33,7 @@ import numpy as np
 from tracker3d.capture import open_capture
 from tracker3d.config import get_camera, list_cameras, load_config
 from tracker3d.geometry import compute_homography, fit_errors, save_calibration
+from tracker3d.lens import load_lens
 from tracker3d.plan import load_plan
 
 CAM_WIN = "CAMERA"
@@ -63,7 +68,7 @@ def _fit(img, max_w=1280, max_h=720):
     return cv2.resize(img, (int(w * s), int(h * s))) if s < 1.0 else img
 
 
-def grab_frame(cam, frame_path):
+def grab_frame(cam, frame_path, lens=None):
     if frame_path:
         img = cv2.imread(frame_path)
         if img is None:
@@ -75,7 +80,7 @@ def grab_frame(cam, frame_path):
         ok, f = cap.read()
         if not ok:
             raise RuntimeError("Failed to read from camera.")
-        disp = _fit(f)
+        disp = _fit(lens.undistort_image(f) if lens is not None else f)
         cv2.putText(disp, "LIVE - press SPACE to freeze  (q=quit)", (12, 28),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
         cv2.imshow(CAM_WIN, disp)
@@ -156,11 +161,18 @@ def main():
     refs_path = fpc.get("reference_points_file", "data/reference_points.json")
 
     state["refs"], state["next_id"] = load_refs(refs_path)
-    print(f"Calibrating '{cam['name']}'  ({cam['source']})")
+    lens, lens_msg = load_lens(cam)
+    print(f"Calibrating '{cam['name']}'  ({cam['source']})  lens correction {lens_msg}")
     print(f"Map: {fp.width_m:.2f} x {fp.height_m:.2f} m | "
           f"{len(state['refs'])} existing reference points")
 
-    frame = grab_frame(cam, args.frame)
+    frame = grab_frame(cam, args.frame, lens)
+    h, w = frame.shape[:2]
+    if lens is not None and lens.image_size != (w, h):
+        sys.exit(f"*** Lens was calibrated at {lens.image_size[0]}x{lens.image_size[1]} but this "
+                 f"frame is {w}x{h}. Use the same stream/resolution. Nothing saved. ***")
+    # With a lens, everything below (display, clicks, the fit) is in rectified pixels.
+    view = lens.undistort_image(frame) if lens is not None else frame
     cv2.namedWindow(CAM_WIN)
     cv2.namedWindow(FP_WIN)
     cv2.setMouseCallback(CAM_WIN, on_cam)
@@ -170,7 +182,7 @@ def main():
 
     while True:
         # camera window
-        cam_disp = _fit(frame.copy())
+        cam_disp = _fit(view.copy())
         s = state["cam_scale"]
         for p in state["pairs"]:
             u, v = int(p["cam"][0] * s), int(p["cam"][1] * s)
@@ -182,6 +194,9 @@ def main():
                f"pairs:{len(state['pairs'])} (need >=4)  pick a floorplan point ->")
         cv2.putText(cam_disp, msg, (12, 28), cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, (0, 255, 255), 2)
+        if lens is not None:
+            cv2.putText(cam_disp, "lens-corrected", (12, cam_disp.shape[0] - 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         cv2.imshow(CAM_WIN, cam_disp)
 
         # floorplan window
@@ -234,12 +249,18 @@ def main():
         print(f"*** REFUSED: {e} Nothing saved. ***")
         return
 
-    h, w = frame.shape[:2]
     pairs = [{"ref_id": p["ref_id"], "cam": [float(p["cam"][0]), float(p["cam"][1])]}
              for p in state["pairs"]]
-    save_calibration(cam["homography_file"], H, (w, h), pairs=pairs)
+    if lens is not None:
+        # Also keep the raw-pixel clicks, so a future lens model can refit H
+        # without re-clicking.
+        raw = lens.distort_points(cam_pts)
+        for p, r in zip(pairs, raw):
+            p["cam_raw"] = [float(r[0]), float(r[1])]
+    save_calibration(cam["homography_file"], H, (w, h), pairs=pairs, lens=lens)
     save_refs(refs_path, state["refs"])
-    print(f"Saved homography for '{cam['name']}' -> {cam['homography_file']} ({w}x{h})")
+    print(f"Saved homography for '{cam['name']}' -> {cam['homography_file']} ({w}x{h}"
+          f"{', lens-corrected pixels' if lens is not None else ', raw pixels'})")
     print(f"Saved {len(state['refs'])} reference points -> {refs_path}")
     print(f"Fit error on the clicked points: mean {ins.mean():.3f} m (max {ins.max():.3f} m)")
     if len(loo):

@@ -198,8 +198,12 @@ python tools/topdown.py --mode height --show  # colour by height
 
 ## Calibration
 
-Calibration is done **once per camera placement**. It finds the homography that
-maps the camera's floor pixels to the map's meters.
+Calibration has two parts:
+
+- **Lens** (once per camera, ever): the focal length and barrel distortion of the
+  wide-angle lens, from a printed ChArUco board. Moving the camera doesn't change it.
+- **Floor** (once per camera placement): the homography that maps the camera's
+  (lens-corrected) floor pixels to the map's meters.
 
 <p align="center">
   <picture>
@@ -207,6 +211,47 @@ maps the camera's floor pixels to the map's meters.
     <img alt="Calibration workflow" src="docs/diagrams/calibration-light.svg" width="100%">
   </picture>
 </p>
+
+### Step 0 — Lens calibration (once per camera)
+
+The Yi cameras bend straight lines near the image edges. A homography can't model
+that, so without a lens model the error grows toward the edges — exactly where
+cameras overlap. With an `intrinsics_file`, every point is undistorted before it
+is projected (only the few points per detection, never whole frames).
+
+1. **Print the board:** `python tools/charuco_board.py` writes an A3 PDF (7×5
+   squares of 55 mm, 4×4 markers). Print at **100 % / actual size**, glue it flat
+   to foam board, check the printed 100 mm ruler and measure one square.
+2. **Record (~1–2 min per camera):** from a ladder, ~0.7–1.5 m from the camera:
+
+   ```bash
+   python tools/calib_intrinsics.py record --camera yi01
+   ```
+
+   Move the board slowly over the whole image, tilted ~30–45° in different
+   directions. Frames are kept automatically when the board is still and the view
+   is new; the overlay shades covered image cells — **fill the corners and edges**.
+   Aim for ~30 frames (<kbd>SPACE</kbd> force-keep, <kbd>U</kbd> undo, <kbd>Q</kbd> finish).
+3. **Solve:** `python tools/calib_intrinsics.py solve --camera yi01 --square-mm 54.8`
+   (your measured size) → `calib/yi01_intrinsics.json`. Target **RMS < 0.5 px**; it
+   also warns about poorly covered edges or an unstable result. Solve before you
+   take the ladder away, so a bad camera can be re-recorded on the spot.
+4. **Check:** `python tools/calib_intrinsics.py view --camera yi01` shows raw |
+   corrected side by side. Door frames and ceiling edges near the borders should be
+   straight on the right.
+5. **Re-click the floor calibration** (Step 2) for that camera. A homography fitted
+   before the lens file existed keeps being used **uncorrected**, and `track.py`
+   says so at startup (`lens correction IGNORED`).
+
+`config.yaml` already points each camera at `calib/<name>_intrinsics.json`; until
+the file exists the camera runs uncorrected. Every floor calibration records the
+fingerprint of the lens model it was fitted with, and `track.py` refuses a
+mismatched pair rather than mis-projecting silently.
+
+> [!TIP]
+> Test the whole flow at home with a webcam first:
+> `python tools/calib_intrinsics.py record --camera webcam --source usb:0`, then
+> `solve --camera webcam` and `view --camera webcam --source usb:0`.
 
 ### Step 1 — Configure the cameras
 
@@ -217,6 +262,7 @@ cameras:
   - name: yi01
     source: "rtsp://192.168.50.72/ch0_0.h264"   # or "usb:0" or "/path/video.mp4"
     homography_file: "calib/yi01_homography.npy"
+    intrinsics_file: "calib/yi01_intrinsics.json"   # lens model (Step 0), optional
 ```
 
 ### Step 2 — Click point pairs
@@ -226,7 +272,9 @@ python calibrate.py --camera yi01
 python calibrate.py --camera yi01 --frame saved.jpg   # use a saved image instead
 ```
 
-Two windows open — the **camera** and the **map**:
+Two windows open — the **camera** and the **map**. With a lens file the camera
+window shows the **lens-corrected** image (labelled so); `--frame` always takes a
+raw saved frame.
 
 | Action | How |
 |--------|-----|
@@ -241,8 +289,9 @@ Two windows open — the **camera** and the **map**:
 bench corners, floor tape marks. Include **shared points** in the overlap with
 other cameras so their calibrations agree.
 
-On save you get `calib/<name>_homography.npy` plus a `.json` sidecar (image size +
-clicked points), and two error numbers:
+On save you get `calib/<name>_homography.npy` plus a `.json` sidecar (image size,
+clicked points in both corrected and raw pixels, lens fingerprint), and two error
+numbers:
 
 | Metric | Meaning | Target |
 |--------|---------|--------|
@@ -279,7 +328,11 @@ python track.py                         # GUI: "floor map" + "cameras" windows, 
 python track.py --headless 60           # no GUI for 60 s, snapshots every second
 python track.py --headless 60 --save-dir ~/snaps
 python track.py --config other.yaml
+python track.py --log-csv walk.csv      # also log every per-camera + fused position
 ```
+
+At startup each camera prints its lens status: `on (...)`, `off (...)`, or
+`IGNORED` (lens file exists but the floor calibration predates it — re-click).
 
 | Mode | Windows | Snapshots | Stops with |
 |------|---------|-----------|------------|
@@ -601,7 +654,7 @@ the CPU and capped the whole tracker at ~4 FPS.
 | Feet occluded in one camera, visible in another | Recovered by fusion + blob intersection |
 | Feet occluded in **all** cameras | Extrapolated from pose, flagged uncertain |
 | Heavy occlusion near the horizon | Few pixels → many meters; can still split beyond `blob_merge_gate_m` |
-| Lens distortion | **Not modelled yet** — wide-angle Yi cameras have barrel distortion, so error grows toward image edges |
+| Lens distortion | Corrected once a camera has an `intrinsics_file` (Calibration → Step 0); uncorrected cameras still lose accuracy toward the image edges |
 | Height / Z | Not measured |
 
 ---
@@ -612,7 +665,7 @@ the CPU and capped the whole tracker at ~4 FPS.
 people_tracker_3d/
 ├── track.py                 main real-time loop
 ├── calibrate.py             click camera ↔ map point pairs → homography
-├── recalibrate.py           live tuner: drag points while watching your dot
+├── recalibrate.py           live tuner: drag points while watching your dot (lens-aware)
 ├── config.yaml              all settings
 ├── bytetrack.yaml           per-camera tracker thresholds
 ├── setup.sh                 one-shot install for Jetson Thor
@@ -626,6 +679,7 @@ people_tracker_3d/
 │   ├── sync.py              multi-camera time alignment + watchdog
 │   ├── detector.py          batched TensorRT YOLO-pose + ByteTrack
 │   ├── geometry.py          homography, calibration I/O, foot-from-pose
+│   ├── lens.py              lens model: undistortion, ChArUco board, intrinsics solve
 │   ├── localize.py          detection → floor position + σ
 │   ├── groundblob.py        floor trapezoids + convex intersection
 │   ├── fusion.py            cross-camera merge + global track lifecycle
@@ -636,10 +690,12 @@ people_tracker_3d/
 │
 ├── tools/
 │   ├── export_engine.py     build the TensorRT engine
+│   ├── charuco_board.py     printable lens-calibration board (PDF)
+│   ├── calib_intrinsics.py  lens calibration: record / solve / view
 │   ├── check_sync.py        measure live cross-camera skew
 │   └── topdown.py           render the world map to PNG
 │
-├── calib/                   <cam>_homography.npy + .json sidecar
+├── calib/                   <cam>_homography.npy + .json sidecar, <cam>_intrinsics.json
 ├── data/                    smart_lab.las · reference_points.json · gs_lod2.sog
 ├── tests/test_core.py       geometry / fusion / tracker-glue / privacy tests
 └── docs/
@@ -657,7 +713,9 @@ people_tracker_3d/
 | `python tools/topdown.py --show` | Render / preview the world map |
 | `python tools/check_sync.py --seconds 8` | Measure live cross-camera capture skew |
 | `python tools/export_engine.py` | Build the TensorRT FP16 engine |
-| `python tests/test_core.py` | Run geometry, fusion, tracker-glue and privacy tests |
+| `python tools/charuco_board.py` | Write the printable lens-calibration board (A3 PDF) |
+| `python tools/calib_intrinsics.py record\|solve\|view --camera <name>` | Lens calibration per camera |
+| `python tests/test_core.py` | Run geometry, lens, fusion, tracker-glue and privacy tests |
 
 ---
 

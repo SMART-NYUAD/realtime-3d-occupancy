@@ -5,16 +5,26 @@
 # Every camera maps people into the SAME floor-map frame via its own
 # homography (calib/<name>_homography.npy + .json sidecar). Add/remove cameras
 # here; calibrate each with:  python calibrate.py --camera <name>
+#
+# intrinsics_file = the camera's lens model (focal length + distortion), made once
+# with tools/calib_intrinsics.py. Points are undistorted before the homography, so
+# the wide-angle barrel distortion stops bending positions near the image edges.
+# Until the file exists the camera simply runs uncorrected. After creating it,
+# re-click the floor calibration (calibrate.py): a homography fitted on raw pixels
+# keeps being used uncorrected (with a warning) until you do.
 cameras:
   - name: yi01
     source: "rtsp://192.168.50.72/ch0_0.h264"
     homography_file: "calib/yi01_homography.npy"
+    intrinsics_file: "calib/yi01_intrinsics.json"
   - name: yi04
     source: "rtsp://192.168.50.198/ch0_0.h264"
     homography_file: "calib/yi04_homography.npy"
+    intrinsics_file: "calib/yi04_intrinsics.json"
   - name: yi05
     source: "rtsp://192.168.50.68/ch0_0.h264"
     homography_file: "calib/yi05_homography.npy"
+    intrinsics_file: "calib/yi05_intrinsics.json"
 
 # Defaults applied to every camera (override per-camera by adding the key above).
 camera_defaults:

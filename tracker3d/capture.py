@@ -6,6 +6,7 @@ Note: the pip OpenCV build has no GStreamer backend, so Jetson CSI / NVDEC
 pipelines can't be opened through cv2 here; the synced path does its own
 GStreamer (with NVDEC) through PyGObject.
 """
+import sys
 import threading
 import time
 
@@ -21,7 +22,9 @@ def open_capture(cam):
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     elif source.startswith("usb:"):
-        cap = cv2.VideoCapture(int(source.split(":", 1)[1]), cv2.CAP_V4L2)
+        # V4L2 is Linux-only (the Thor); elsewhere (e.g. a Mac webcam) let OpenCV pick.
+        backend = cv2.CAP_V4L2 if sys.platform.startswith("linux") else cv2.CAP_ANY
+        cap = cv2.VideoCapture(int(source.split(":", 1)[1]), backend)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(cam.get("width", 1280)))
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(cam.get("height", 720)))
         cap.set(cv2.CAP_PROP_FPS, int(cam.get("fps", 30)))
