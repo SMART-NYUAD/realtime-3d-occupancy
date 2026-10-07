@@ -281,6 +281,7 @@ raw saved frame.
 | Freeze a camera frame | <kbd>SPACE</kbd> |
 | Add a pair | click a point on the **map**, then the **same physical spot** in the camera |
 | Reuse a shared point | click a **magenta** reference point (created by another camera) |
+| Move a misplaced point | drag it — any green point in the camera window, or a point you created this session on the map (shared magenta points are adjusted in `recalibrate.py`) |
 | Undo last pair | <kbd>U</kbd> |
 | Finish & save | <kbd>ENTER</kbd> (needs ≥ 4 pairs) |
 | Quit without saving | <kbd>Q</kbd> |

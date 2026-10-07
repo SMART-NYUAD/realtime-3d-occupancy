@@ -9,6 +9,10 @@ points (in floorplan meters). When you calibrate a camera:
     where that point appears in the camera image.  -> cameras stay in agreement.
   - Click empty floor to CREATE a new shared reference point (yellow); it's saved
     for future cameras to snap to.
+  - Misplaced a point? DRAG it: any green point in the camera window, or a point
+    you created this session on the floorplan. Points from other cameras stay put
+    here (moving one would shift those cameras too) — fine-tune those in
+    recalibrate.py, where every camera using them is updated live.
 
 Collect >=4 correspondences spread as widely as the camera sees (big quad!).
 Shared points should sit in the OVERLAP zone between cameras.
@@ -19,7 +23,7 @@ pixels. --frame always takes a raw (uncorrected) saved frame.
 
 Usage:
     python calibrate.py --camera <name> [--config config.yaml] [--frame img.jpg]
-Camera window:  SPACE freeze | u undo | ENTER finish | q quit
+Camera window:  SPACE freeze | drag a point to move it | u undo | ENTER finish | q quit
 """
 import argparse
 import json
@@ -40,6 +44,8 @@ from tracker3d.render import MARK_NEW, MARK_PENDING, MARK_SHARED, MARK_USED, dra
 CAM_WIN = "CAMERA"
 FP_WIN = "FLOORPLAN (magenta=other cameras, yellow=new, green=used)"
 SNAP_M = 0.4   # click within this many meters of a ref point snaps to it
+HIT_PX = 10    # press within this many display pixels of a marker to drag it
+DRAG_PX = 3    # mouse must move this far before a press counts as a drag
 
 state = {
     "cam_scale": 1.0,
@@ -48,6 +54,8 @@ state = {
     "next_id": 0,
     "pending": None,     # {"world":(x,y),"ref_id":int} awaiting a camera click
     "pairs": [],         # [{"cam":(u,v),"world":(x,y),"ref_id":int}]
+    "press_fp": None,    # floorplan press: {"x","y","ref","moved"} (click vs drag)
+    "drag_cam": None,    # index into pairs of the camera point being dragged
 }
 
 
@@ -93,10 +101,9 @@ def grab_frame(cam, frame_path, lens=None):
             cap.release(); cv2.destroyAllWindows(); sys.exit(0)
 
 
-def on_fp(event, x, y, flags, fp):
-    if event != cv2.EVENT_LBUTTONDOWN:
-        return
-    wx, wy = fp.px_to_world(x, y)
+def _select_ref(wx, wy):
+    """A click on the floorplan: snap to a nearby reference, or create a new one,
+    and wait for the matching camera click."""
     best, bd = None, SNAP_M
     for r in state["refs"]:
         d = math.hypot(r["world"][0] - wx, r["world"][1] - wy)
@@ -115,23 +122,81 @@ def on_fp(event, x, y, flags, fp):
     print("    -> now click that same point in the CAMERA window")
 
 
+def _move_ref(r, wx, wy):
+    """Move a reference created this session; its pairs and a pending pick follow."""
+    r["world"] = [round(wx, 3), round(wy, 3)]
+    for p in state["pairs"]:
+        if p["ref_id"] == r["id"]:
+            p["world"] = tuple(r["world"])
+    if state["pending"] and state["pending"]["ref_id"] == r["id"]:
+        state["pending"]["world"] = tuple(r["world"])
+
+
+def on_fp(event, x, y, flags, fp):
+    """Press+release without moving = select/create (as before). Press on a point
+    created this session and move = drag it."""
+    if event == cv2.EVENT_LBUTTONDOWN:
+        hit = None
+        for r in state["refs"]:
+            px = fp.world_to_px(*r["world"])
+            if math.hypot(px[0] - x, px[1] - y) <= HIT_PX:
+                hit = r
+                break
+        state["press_fp"] = {"x": x, "y": y, "ref": hit, "moved": False}
+    elif event == cv2.EVENT_MOUSEMOVE and state["press_fp"] and flags & cv2.EVENT_FLAG_LBUTTON:
+        pr = state["press_fp"]
+        if not pr["moved"] and math.hypot(x - pr["x"], y - pr["y"]) < DRAG_PX:
+            return
+        r = pr["ref"]
+        if r is None:
+            return
+        if r["id"] not in state["new_ids"]:
+            if not pr["moved"]:
+                print(f"  R{r['id']} is shared with other cameras — move it in recalibrate.py")
+            pr["moved"] = True                     # swallow the click, don't move it
+            return
+        pr["moved"] = True
+        _move_ref(r, *fp.px_to_world(x, y))
+    elif event == cv2.EVENT_LBUTTONUP and state["press_fp"]:
+        pr, state["press_fp"] = state["press_fp"], None
+        if pr["moved"]:
+            r = pr["ref"]
+            if r is not None and r["id"] in state["new_ids"]:
+                print(f"  moved R{r['id']} to ({r['world'][0]:.2f},{r['world'][1]:.2f}) m")
+            return
+        _select_ref(*fp.px_to_world(pr["x"], pr["y"]))
+
+
 def on_cam(event, x, y, flags, param):
-    if event != cv2.EVENT_LBUTTONDOWN:
-        return
-    if state["pending"] is None:
-        print("  pick a reference on the FLOORPLAN first.")
-        return
+    """With a floorplan point picked: click pairs it. Otherwise press on a green
+    point and drag to move it."""
     s = state["cam_scale"]
-    pr = state["pending"]
-    state["pairs"].append({"cam": (x / s, y / s), "world": pr["world"],
-                           "ref_id": pr["ref_id"]})
-    print(f"  paired R{pr['ref_id']} <-> camera ({x/s:.0f},{y/s:.0f})  "
-          f"[{len(state['pairs'])} pairs]")
-    state["pending"] = None
+    if event == cv2.EVENT_LBUTTONDOWN:
+        if state["pending"] is not None:
+            pr = state["pending"]
+            state["pairs"].append({"cam": (x / s, y / s), "world": pr["world"],
+                                   "ref_id": pr["ref_id"]})
+            print(f"  paired R{pr['ref_id']} <-> camera ({x/s:.0f},{y/s:.0f})  "
+                  f"[{len(state['pairs'])} pairs]")
+            state["pending"] = None
+            return
+        for i, p in enumerate(state["pairs"]):
+            if math.hypot(p["cam"][0] * s - x, p["cam"][1] * s - y) <= HIT_PX:
+                state["drag_cam"] = i
+                return
+        print("  pick a reference on the FLOORPLAN first (or drag a green point).")
+    elif event == cv2.EVENT_MOUSEMOVE and state["drag_cam"] is not None \
+            and flags & cv2.EVENT_FLAG_LBUTTON:
+        state["pairs"][state["drag_cam"]]["cam"] = (x / s, y / s)
+    elif event == cv2.EVENT_LBUTTONUP and state["drag_cam"] is not None:
+        p = state["pairs"][state["drag_cam"]]
+        print(f"  moved R{p['ref_id']} camera point to ({p['cam'][0]:.0f},{p['cam'][1]:.0f})")
+        state["drag_cam"] = None
 
 
 def undo():
     # clear an unpaired pending (removing a just-created new ref), else pop a pair
+    state["drag_cam"] = state["press_fp"] = None
     if state["pending"] is not None:
         rid = state["pending"]["ref_id"]
         if rid in state["new_ids"] and all(p["ref_id"] != rid for p in state["pairs"]):
@@ -179,7 +244,8 @@ def main():
     cv2.setMouseCallback(CAM_WIN, on_cam)
     cv2.setMouseCallback(FP_WIN, on_fp, fp)
     print("\nFLOORPLAN: click a magenta point (reuse) or empty floor (new), then click")
-    print("it in the CAMERA. >=4 pairs, spread wide. ENTER=finish, u=undo, q=quit.\n")
+    print("it in the CAMERA. >=4 pairs, spread wide. Misplaced? drag the point.")
+    print("ENTER=finish, u=undo, q=quit.\n")
 
     while True:
         # camera window
