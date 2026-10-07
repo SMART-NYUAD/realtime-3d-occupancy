@@ -41,7 +41,7 @@ from tracker3d.geometry import (compute_homography, foot_from_pose, foot_point,
 from tracker3d.lens import load_lens
 from tracker3d.plan import load_plan
 from tracker3d.privacy import PrivacyMasker
-from tracker3d.render import CAM_COLORS
+from tracker3d.render import CAM_COLORS, MARK_SHARED, draw_marker
 HIT_PX = 14            # click tolerance for grabbing a point
 
 S = {
@@ -309,10 +309,8 @@ def main():
                 cv2.rectangle(disp, (x1, y1), (x2, y2), colors[n], 2)
                 cv2.circle(disp, (int(p["foot"][0] * s), int(p["foot"][1] * s)), 4, (0, 255, 0), -1)
             for pr in S["pairs"][n]:
-                u, v = int(pr["cam"][0] * s), int(pr["cam"][1] * s)
-                cv2.circle(disp, (u, v), 7, (0, 0, 255), 2)
-                cv2.putText(disp, f"R{pr['ref_id']}", (u + 8, v),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                draw_marker(disp, (pr["cam"][0] * s, pr["cam"][1] * s), MARK_SHARED,
+                            f"R{pr['ref_id']}")
             e = S["err"][n]
             etxt = f"err={e:.2f}m" if e is not None else "need >=4 pts"
             cv2.putText(disp, f"{n}: {len(S['pairs'][n])} pts  {etxt}"
@@ -323,14 +321,12 @@ def main():
         # ---- floorplan ----
         canvas = fp.background()
         for rid, wld in S["refs"].items():
-            px = fp.world_to_px(*wld)
-            cv2.circle(canvas, px, 6, (200, 200, 200), -1)
-            cv2.putText(canvas, f"R{rid}", (px[0] + 7, px[1]),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+            draw_marker(canvas, fp.world_to_px(*wld), MARK_SHARED, f"R{rid}")
         for n, w in dots:
             px = fp.world_to_px(*w)
-            cv2.circle(canvas, px, 8, colors[n], -1)
-            cv2.putText(canvas, n, (px[0] + 9, px[1]),
+            cv2.circle(canvas, px, 6, (0, 0, 0), -1, cv2.LINE_AA)        # dark outline
+            cv2.circle(canvas, px, 5, colors[n], -1, cv2.LINE_AA)
+            cv2.putText(canvas, n, (px[0] + 8, px[1]),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, colors[n], 1)
         # live cross-camera distance (first two distinct-camera dots)
         if len({n for n, _ in dots}) >= 2:
