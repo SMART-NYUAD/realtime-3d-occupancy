@@ -45,5 +45,9 @@ class Localizer:
             p["foot_sigma_m"] = (float(np.clip(np.hypot(w2[0] - w[0], w2[1] - w[1]), 0.03, 2.0))
                                  if w2 is not None else 0.5)
             if self.use_blob:
-                p["floor_poly"] = bbox_floor_polygon(proj.H, p["bbox"], frame_wh, **self.blob_kw)
+                # Built in H0's (rectified) pixel space; "clipped" is judged on the
+                # raw box, since the frame edge is only straight in raw pixels.
+                p["floor_poly"] = bbox_floor_polygon(
+                    proj.H0, proj.rectify_bbox(p["bbox"]), frame_wh,
+                    clipped=p["bbox"][3] >= frame_wh[1] - 2.0, **self.blob_kw)
         return people

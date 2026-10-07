@@ -7,9 +7,11 @@ homography -> cross-camera fusion -> top-down map (+ MQTT).
 Usage:
     python track.py [--config config.yaml]
     python track.py --headless 60 [--save-dir /tmp]   # no GUI, 60 s, snapshots
+    python track.py --log-csv walk.csv                # also log every position
 Keys (GUI): q = quit
 """
 import argparse
+import csv
 import os
 import signal
 import sys
@@ -21,6 +23,7 @@ from tracker3d.config import load_config, load_env, list_cameras
 from tracker3d.detector import MultiCamDetector
 from tracker3d.fusion import Fusion
 from tracker3d.geometry import FloorProjector
+from tracker3d.lens import load_lens
 from tracker3d.localize import Localizer
 from tracker3d.mqtt_output import MqttPositionPublisher
 from tracker3d.plan import load_plan
@@ -36,12 +39,46 @@ def load_projectors(cams):
         if not os.path.exists(hp):
             print(f"[{name}] no homography ({hp}) — run: python calibrate.py --camera {name}")
             continue
+        lens, lens_msg = load_lens(cam)
         try:
-            projs[name] = FloorProjector.load(hp)
+            projs[name] = FloorProjector.load(hp, lens)
             print(f"[{name}] homography loaded from {hp}")
+            # A configured lens can still be ignored if H predates it (lens_status says so).
+            status = lens_msg if lens is None or projs[name].lens is not None \
+                else projs[name].lens_status
+            print(f"[{name}] lens correction {status}")
         except ValueError as e:
             print(f"[{name}] {e}")
     return projs
+
+
+class PositionLog:
+    """Optional CSV of every per-camera and fused position (for before/after
+    accuracy checks, e.g. walking a straight tape line). One row per position:
+    t, kind (det|track), cam, id, x, y, foot_source."""
+
+    def __init__(self, path):
+        self.f = open(path, "w", newline="")
+        self.w = csv.writer(self.f)
+        self.w.writerow(["t", "kind", "cam", "id", "x", "y", "foot_source"])
+        self._flush_t = time.time()
+
+    def write(self, t, dets, tracks):
+        for d in dets:
+            if d.get("world") is not None:
+                self.w.writerow([f"{t:.3f}", "det", d["cam"], d["id"],
+                                 f"{d['world'][0]:.3f}", f"{d['world'][1]:.3f}",
+                                 d.get("foot_source", "")])
+        for g in tracks:
+            self.w.writerow([f"{t:.3f}", "track", "+".join(g.get("cams", [])),
+                             g.get("gid", ""), f"{g['world'][0]:.3f}",
+                             f"{g['world'][1]:.3f}", "coasting" if g.get("coasting") else ""])
+        if time.time() - self._flush_t > 1.0:
+            self.f.flush()
+            self._flush_t = time.time()
+
+    def close(self):
+        self.f.close()
 
 
 class Sources:
@@ -100,6 +137,8 @@ def main():
     ap.add_argument("--headless", type=float, default=0.0,
                     help="run N seconds with no GUI, saving snapshots to --save-dir")
     ap.add_argument("--save-dir", default="/tmp")
+    ap.add_argument("--log-csv", default=None,
+                    help="write every per-camera and fused position to this CSV")
     args = ap.parse_args()
     load_env()
     cfg = load_config(args.config)
@@ -120,6 +159,7 @@ def main():
     mqtt_pub = MqttPositionPublisher(ocfg.get("mqtt", {}))
     mqtt_pub.start()
     sources = Sources(cfg, cams)
+    poslog = PositionLog(args.log_csv) if args.log_csv else None
 
     headless = args.headless > 0.0
     gui = ocfg.get("show_window", True) and not headless
@@ -164,6 +204,8 @@ def main():
                 else:
                     people_now = [p for p in all_dets if p["world"] is not None]
                 mqtt_pub.publish_positions(people_now)
+                if poslog is not None and new:
+                    poslog.write(t_cap, all_dets, people_now)
                 n_steps += 1 if new else 0
                 if not new and not sources.synced:
                     time.sleep(0.002)          # plain capture: wait for a fresh frame
@@ -216,6 +258,8 @@ def main():
 
     print("shutting down ...", flush=True)
     sources.release()
+    if poslog is not None:
+        poslog.close()
     mqtt_pub.stop()
     cv2.destroyAllWindows()
     cv2.waitKey(1)

@@ -312,6 +312,201 @@ def test_privacy_masks_head_only():
     print("PASS privacy mask covers the head from pose keypoints only")
 
 
+# --- lens correction (synthetic wide-angle camera, no real calibration needed) ---
+
+_LK = np.array([[672.0, 0, 960.0], [0, 672.0, 540.0], [0, 0, 1]])   # ~110 deg over 1920 px
+_LD = np.array([-0.28, 0.08, 0.0005, -0.0003, 0.0])                 # barrel distortion
+
+
+def _lens(dist=_LD):
+    from tracker3d.lens import LensModel
+    return LensModel(_LK, dist, (W, H_IMG))
+
+
+def _floor_camera():
+    """Camera 2.7 m above the floor, tilted 35 deg down. Returns (floor pts (N,2),
+    raw distorted pixels (N,2), rvec, tvec), keeping points inside the image and
+    inside the lens model's valid field of view."""
+    import cv2
+    t = np.radians(35)
+    fwd = np.array([0, np.cos(t), -np.sin(t)])
+    right = np.array([1.0, 0, 0])
+    down = np.cross(fwd, right)
+    R = np.vstack([right, down, fwd])
+    C = np.array([0, 0, 2.7])
+    tvec = -R @ C
+    rvec = cv2.Rodrigues(R)[0]
+    xs, ys = np.meshgrid(np.arange(-5, 5.01, 0.25), np.arange(0.5, 9.01, 0.25))
+    floor = np.column_stack([xs.ravel(), ys.ravel()])
+    cam = (R @ np.column_stack([floor, np.zeros(len(floor))]).T).T + tvec
+    ok = cam[:, 2] > 0.1
+    r = np.hypot(cam[:, 0] / cam[:, 2], cam[:, 1] / cam[:, 2])
+    ok &= r < 1.7
+    floor, cam3 = floor[ok], np.column_stack([floor[ok], np.zeros(ok.sum())])
+    raw = cv2.projectPoints(cam3, rvec, tvec, _LK, _LD)[0].reshape(-1, 2)
+    inside = (raw[:, 0] >= 0) & (raw[:, 0] < W) & (raw[:, 1] >= 0) & (raw[:, 1] < H_IMG)
+    return floor[inside], raw[inside], rvec, tvec
+
+
+def test_lens_round_trip():
+    lens = _lens()
+    us, vs = np.meshgrid(np.linspace(0, W - 1, 25), np.linspace(0, H_IMG - 1, 15))
+    raw = np.column_stack([us.ravel(), vs.ravel()])
+    back = lens.distort_points(lens.undistort_points(raw))
+    err = np.abs(back - raw).max()
+    assert err < 0.01, err
+    # Below the frame (pose-extrapolated feet): linear extrapolation, monotonic.
+    below = np.column_stack([np.full(12, 300.0), np.linspace(H_IMG - 1, H_IMG + 300, 12)])
+    ry = lens.undistort_points(below)[:, 1]
+    assert np.all(np.diff(ry) > 0), ry
+    print(f"PASS lens undistort/distort round trip (max {err:.4f} px) + monotonic beyond frame")
+
+
+def test_lens_floor_projection():
+    from tracker3d.geometry import FloorProjector, compute_homography
+    lens = _lens()
+    floor, raw, _, _ = _floor_camera()
+    # 8 well-spread clicks: the extremes of the visible floor.
+    idx = sorted({int(np.argmin(raw[:, 0])), int(np.argmax(raw[:, 0])),
+                  int(np.argmin(raw[:, 1])), int(np.argmax(raw[:, 1])),
+                  int(np.argmin(raw.sum(1))), int(np.argmax(raw.sum(1))),
+                  int(np.argmin(raw[:, 0] - raw[:, 1])), int(np.argmax(raw[:, 0] - raw[:, 1]))})
+    H = compute_homography(lens.undistort_points(raw[idx]), floor[idx])
+    proj = FloorProjector(H, (W, H_IMG), lens)
+    proj.set_frame_size(W, H_IMG)
+    err = max(np.hypot(*(np.array(proj.to_floor(*p)) - f)) for p, f in zip(raw, floor))
+    assert err < 2e-3, err
+    Hraw = compute_homography(raw[idx], floor[idx])           # today's raw-pixel fit
+    rproj = FloorProjector(Hraw, (W, H_IMG))
+    rproj.set_frame_size(W, H_IMG)
+    errs_raw = [np.hypot(*(np.array(rproj.to_floor(*p)) - f)) for p, f in zip(raw, floor)
+                if rproj.to_floor(*p) is not None]
+    assert max(errs_raw) > 10 * err and max(errs_raw) > 0.05, (max(errs_raw), err)
+    print(f"PASS lens-corrected floor projection: max err {err * 1000:.2f} mm "
+          f"(raw-pixel homography: {max(errs_raw):.2f} m)")
+
+
+def test_lens_rescale():
+    from tracker3d.geometry import FloorProjector
+    lens = _lens()
+    floor, raw, _, _ = _floor_camera()
+    from tracker3d.geometry import compute_homography
+    H = compute_homography(lens.undistort_points(raw[::7]), floor[::7])
+    full = FloorProjector(H, (W, H_IMG), lens); full.set_frame_size(W, H_IMG)
+    half = FloorProjector(H, (W, H_IMG), lens); half.set_frame_size(W // 2, H_IMG // 2)
+    for u, v in raw[::11]:
+        a, b = full.to_floor(u, v), half.to_floor(u / 2, v / 2)
+        assert np.allclose(a, b, atol=1e-6), (a, b)
+    print("PASS lens-corrected projection is resolution independent")
+
+
+def test_lens_guard():
+    import tempfile
+    from tracker3d.geometry import FloorProjector, save_calibration
+    H = np.array([[0.01, 0.0, -3.0], [0.0, 0.02, -5.0], [0.0, 0.0008, 1.0]])
+    lens_a, lens_b = _lens(), _lens(_LD * 1.1)
+    with tempfile.TemporaryDirectory() as d:
+        with_lens = os.path.join(d, "a_homography.npy")
+        save_calibration(with_lens, H, (W, H_IMG), lens=lens_a)
+        assert FloorProjector.load(with_lens, lens_a).lens is not None
+        for wrong in (lens_b, None):
+            try:
+                FloorProjector.load(with_lens, wrong)
+                raise AssertionError("mismatched lens accepted")
+            except ValueError:
+                pass
+        raw_fit = os.path.join(d, "b_homography.npy")
+        save_calibration(raw_fit, H, (W, H_IMG))
+        p = FloorProjector.load(raw_fit, lens_a)          # H predates the lens file
+        assert p.lens is None and p.lens_status.startswith("IGNORED"), p.lens_status
+        p.set_frame_size(W, H_IMG)
+        w = H @ np.array([900.0, 800.0, 1.0])
+        assert np.allclose(p.to_floor(900, 800), w[:2] / w[2])   # unchanged raw behaviour
+    print("PASS lens guard: mismatch refused, pre-lens homography keeps the raw path")
+
+
+def test_lens_blob_contains_foot():
+    from tracker3d.geometry import FloorProjector, compute_homography
+    import cv2
+    lens = _lens()
+    floor, raw, _, _ = _floor_camera()
+    H = compute_homography(lens.undistort_points(raw[::5]), floor[::5])
+    proj = FloorProjector(H, (W, H_IMG), lens); proj.set_frame_size(W, H_IMG)
+    edge = [i for i in range(len(raw)) if raw[i, 0] < 250 and 400 < raw[i, 1] < 900]
+    assert edge, "no floor point near the image edge"
+    i = edge[0]
+    u, v = raw[i]
+    bbox = (u - 50, v - 300, u + 50, v)
+    kw = dict(far_frac=0.1, near_frac=1.4, clip_inflate=2.5, body_aspect=3.0, short_aspect=1.8)
+    poly = bbox_floor_polygon(proj.H0, proj.rectify_bbox(bbox), (W, H_IMG), clipped=False, **kw)
+    assert poly is not None
+    inside = cv2.pointPolygonTest(poly.astype(np.float32), tuple(map(float, floor[i])), False)
+    assert inside >= 0, (poly, floor[i])
+    tall = bbox_floor_polygon(proj.H0, proj.rectify_bbox(bbox), (W, H_IMG), clipped=True, **kw)
+    assert cv2.contourArea(tall.astype(np.float32)) > cv2.contourArea(poly.astype(np.float32))
+    print("PASS lens-corrected blob trapezoid contains the true foot near the image edge")
+
+
+def test_charuco_board_detect():
+    import cv2
+    from tracker3d.lens import BOARD_DEFAULTS, detect_board, make_board, make_detector
+    board = make_board(**BOARD_DEFAULTS)
+    img = board.generateImage((700, 500), marginSize=0, borderBits=1)
+    canvas = np.full((800, 1000), 255, np.uint8)
+    canvas[150:650, 150:850] = img
+    M = np.array([[0.9, 0.12, 40], [-0.05, 0.85, 60], [0.0001, 0.00015, 1.0]])
+    warped = cv2.warpPerspective(canvas, M, (1000, 800), borderValue=255)
+    det = detect_board(warped, make_detector(board), board)
+    n_all = (BOARD_DEFAULTS["cols"] - 1) * (BOARD_DEFAULTS["rows"] - 1)
+    assert det is not None and len(det[2]) >= 0.9 * n_all, None if det is None else len(det[2])
+    print(f"PASS ChArUco generator <-> detector agree ({len(det[2])}/{n_all} corners)")
+
+
+def _synthetic_views(seed, n=30):
+    """Board views through the synthetic 110 deg lens, ~0.6-1.4 m away (the board
+    looks small, as it will from a ladder), with 0.1 px corner noise."""
+    import cv2
+    from tracker3d.lens import BOARD_DEFAULTS, make_board
+    obj = np.asarray(make_board(**BOARD_DEFAULTS).getChessboardCorners(), np.float64).reshape(-1, 3)
+    centre = obj.mean(axis=0)
+    rng = np.random.default_rng(seed)
+    objs, imgs = [], []
+    for _ in range(5000):
+        if len(objs) == n:
+            break
+        R = cv2.Rodrigues(rng.uniform(-0.6, 0.6, 3))[0]
+        z = rng.uniform(0.6, 1.4)
+        nx, ny = rng.uniform(-1.3, 1.3), rng.uniform(-0.75, 0.75)
+        tvec = np.array([nx * z, ny * z, z]) - R @ centre
+        cam = (R @ obj.T).T + tvec
+        if (cam[:, 2] <= 0.1).any() or \
+                (np.hypot(cam[:, 0] / cam[:, 2], cam[:, 1] / cam[:, 2]) > 1.7).any():
+            continue
+        px = cv2.projectPoints(obj, cv2.Rodrigues(R)[0], tvec, _LK, _LD)[0].reshape(-1, 2)
+        if (px < 0).any() or (px[:, 0] >= W).any() or (px[:, 1] >= H_IMG).any():
+            continue
+        objs.append(obj.astype(np.float32))
+        imgs.append((px + rng.normal(0, 0.1, px.shape)).astype(np.float32))
+    return objs, imgs
+
+
+def test_solve_intrinsics_synthetic():
+    """Seeds 5 and 7 fell into the wide-angle false minimum (fx ~2x, rms > 1 px)
+    with OpenCV's default start; the staged multi-start solve must recover them."""
+    from tracker3d.lens import solve_with_outliers
+    worst = (0.0, 0.0, 0.0)
+    for seed in (1, 5, 7):
+        objs, imgs = _synthetic_views(seed)
+        assert len(objs) >= 20, len(objs)
+        res, _ = solve_with_outliers(objs, imgs, (W, H_IMG), "standard")
+        fx_err = abs(res["K"][0, 0] - _LK[0, 0]) / _LK[0, 0]
+        k1_err = abs(res["dist"][0] - _LD[0])
+        assert fx_err < 0.02 and k1_err < 0.02 and res["rms"] < 0.2, (seed, fx_err, k1_err, res["rms"])
+        worst = tuple(max(a, b) for a, b in zip(worst, (fx_err, k1_err, res["rms"])))
+    print(f"PASS intrinsics solve recovers a 110 deg lens incl. hard cases (worst: fx "
+          f"{worst[0] * 100:.2f} %, k1 err {worst[1]:.4f}, rms {worst[2]:.3f} px)")
+
+
 if __name__ == "__main__":
     test_convex_intersection()
     test_foot_from_pose()
@@ -320,6 +515,13 @@ if __name__ == "__main__":
     test_homography_fit_and_loo()
     test_bytetrack_global_index()
     test_privacy_masks_head_only()
+    test_lens_round_trip()
+    test_lens_floor_projection()
+    test_lens_rescale()
+    test_lens_guard()
+    test_lens_blob_contains_foot()
+    test_charuco_board_detect()
+    test_solve_intrinsics_synthetic()
     Hs = _load()
     if Hs is not None:
         test_projector_rescale_and_horizon(Hs)

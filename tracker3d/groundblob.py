@@ -69,7 +69,7 @@ def _project_row(H, x1, x2, v, ref_sign):
 
 
 def bbox_floor_polygon(H, bbox, frame_wh, far_frac=0.1, near_frac=1.0,
-                       clip_inflate=2.5, body_aspect=2.5, short_aspect=1.3):
+                       clip_inflate=2.5, body_aspect=2.5, short_aspect=1.3, clipped=None):
     """Project a detection's bbox to a floor trapezoid of foot-point uncertainty.
 
     The uncertainty is *one-sided*: occlusion and clipping can only hide the
@@ -106,6 +106,9 @@ def bbox_floor_polygon(H, bbox, frame_wh, far_frac=0.1, near_frac=1.0,
                     aggressively toward the camera (0 disables this gate). The
                     scale is 1.0 exactly at the threshold, so detections crossing
                     it frame-to-frame don't jump.
+        clipped:    whether the box touches the frame bottom. None infers it from
+                    `bbox` and `frame_wh`; pass it explicitly when `bbox` is in
+                    rectified (undistorted) pixels, where the frame edge is curved.
 
     Returns an (N, 2) float array of floor points (a convex quad, ordered), or
     None if the band is entirely above the horizon (can't form a floor region).
@@ -139,7 +142,9 @@ def bbox_floor_polygon(H, bbox, frame_wh, far_frac=0.1, near_frac=1.0,
 
     # "Can't see the feet": box clipped at the bottom edge -> feet are off-frame,
     # nearer than y2 and very uncertain. Reach much further toward the camera.
-    if y2 >= h_img - 2.0:
+    if clipped is None:
+        clipped = y2 >= h_img - 2.0
+    if clipped:
         v_near = max(v_near, y2 + clip_inflate * box_h)
 
     # The far edge may sit beyond the horizon; walk it down toward the foot row

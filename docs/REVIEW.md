@@ -28,7 +28,7 @@ branch), **Open** (known, not done), **Roadmap** (planned larger work).
 
 | # | Issue | Status |
 |---|-------|--------|
-| C1 | **Lens distortion is ignored.** The Yi cameras are wide-angle with clear barrel distortion; one homography can't fit the whole image, so error grows toward the edges — exactly where cameras overlap and fusion needs agreement. Likely the largest remaining error source. | **Open** — see roadmap R1. |
+| C1 | **Lens distortion is ignored.** The Yi cameras are wide-angle with clear barrel distortion; one homography can't fit the whole image, so error grows toward the edges — exactly where cameras overlap and fusion needs agreement. Likely the largest remaining error source. | **Fixed in code, pending lab calibration** — `tracker3d/lens.py` + `tools/calib_intrinsics.py`: points are undistorted before the homography once each camera has an `intrinsics_file`. |
 | C2 | `cv2.findHomography(..., RANSAC)` used the default 3.0 threshold, in **meters** here → no outlier rejection. | Fixed — least-squares below 6 points, RANSAC at 0.25 m above. |
 | C3 | The reported "reprojection error" was in-sample; with exactly 4 points it is always ≈0. | Fixed — `calibrate.py` also reports leave-one-out error (≥5 points). |
 | C4 | `recalibrate.py` placed the dot from the box bottom while `track.py` used pose ankles, so tuning targeted a different point than tracking used. | Fixed — same pose foot estimate. |
