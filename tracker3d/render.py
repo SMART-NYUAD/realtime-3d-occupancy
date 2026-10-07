@@ -16,6 +16,27 @@ _FOOT_COLORS = {"ankles": (0, 255, 0), "ankle": (0, 255, 128),
                 "knees": (0, 200, 255), "hips": (0, 128, 255), "box": (0, 0, 255)}
 
 
+# Calibration markers (BGR): bright, distinct from each other and from the
+# grey/brown scan background.
+MARK_SHARED = (255, 0, 255)    # magenta: reference point from another camera / shared
+MARK_USED = (0, 255, 0)        # green: paired in this session
+MARK_NEW = (0, 255, 255)       # yellow: new this session, not paired yet
+MARK_PENDING = (255, 255, 0)   # cyan: ring around the point awaiting its camera click
+
+
+def draw_marker(img, pt, color, label=None, size=6):
+    """Small crosshair whose centre is the exact point, with a thin dark outline
+    so it stays visible on any background. Precise to click/drag against."""
+    x, y = int(round(pt[0])), int(round(pt[1]))
+    for (x0, y0, x1, y1) in ((x - size, y, x + size, y), (x, y - size, x, y + size)):
+        cv2.line(img, (x0, y0), (x1, y1), (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.line(img, (x0, y0), (x1, y1), color, 1, cv2.LINE_AA)
+    if label:
+        org = (x + size + 3, y - 3)
+        cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+
+
 def _id_color(tid):
     h = (tid * 2654435761) & 0xFFFFFF
     return 60 + (h & 0xFF) % 196, 60 + (h >> 8 & 0xFF) % 196, 60 + (h >> 16 & 0xFF) % 196

@@ -280,7 +280,7 @@ raw saved frame.
 |--------|-----|
 | Freeze a camera frame | <kbd>SPACE</kbd> |
 | Add a pair | click a point on the **map**, then the **same physical spot** in the camera |
-| Reuse a shared point | click a **gray** reference point (created by another camera) |
+| Reuse a shared point | click a **magenta** reference point (created by another camera) |
 | Undo last pair | <kbd>U</kbd> |
 | Finish & save | <kbd>ENTER</kbd> (needs ≥ 4 pairs) |
 | Quit without saving | <kbd>Q</kbd> |
