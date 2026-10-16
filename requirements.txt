@@ -5,6 +5,7 @@ ultralytics>=8.4.0
 lap>=0.5.12          # ByteTrack assignment
 PyYAML>=6.0
 numpy>=1.24
+scipy>=1.10          # offline joint camera calibration (sparse least squares)
 opencv-python>=4.8
 laspy>=2.5           # read the .las lab scan -> top-down world map
 paho-mqtt>=2.0       # publish positions to MQTT

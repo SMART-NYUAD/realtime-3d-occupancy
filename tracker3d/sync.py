@@ -34,7 +34,7 @@ class SyncGroup:
         self.lag_budget = scfg.get("lag_budget_ms", 500) / 1000.0
         self._last_target = 0.0
 
-    def next_aligned(self, wait=True, timeout=2.0):
+    def next_aligned(self, wait=True, timeout=2.0, with_metadata=False):
         """Return (target_t, {name: frame}) for the newest capture time the *live*
         cameras share, not yet served, blocking up to `timeout`s for one. A camera
         lagging more than `lag_budget` behind the most-live one is treated as stuck
@@ -43,7 +43,8 @@ class SyncGroup:
         lacking a frame within tol of the target are omitted. Values are
         (capture_t, frame) so the caller can tell a re-served frame from a new
         one; frames are shared with the capture buffer — never draw on them.
-        (None, {}) on timeout."""
+        With `with_metadata`, values include a third item carrying that frame's
+        timestamp source, reconnect generation and frame ID. (None, {}) on timeout."""
         t0 = time.time()
         while True:
             lasts = {}
@@ -60,7 +61,8 @@ class SyncGroup:
                     self._last_target = target
                     frames = {}
                     for n, s in self.streams.items():
-                        got = s.frame_at(target, self.tol)
+                        get = s.frame_at_with_metadata if with_metadata else s.frame_at
+                        got = get(target, self.tol)
                         if got is not None:
                             frames[n] = got
                     return target, frames

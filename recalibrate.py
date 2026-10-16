@@ -218,6 +218,12 @@ def main():
     cfg = load_config(args.config)
 
     cams = list_cameras(cfg)
+    joint = [c["name"] for c in cams
+             if load_calibration_meta(c["homography_file"]).get("source") == "autocalib"]
+    if joint:
+        raise SystemExit(f"Joint calibration found for {joint}. Use autocalib.py anchor to move the rig, "
+                         "or calibrate.py --manual-override for an independent camera calibration. "
+                         "The tuner cannot reconstruct manual clicks from joint results.")
     fpc = cfg["floorplan"]
     fp = load_plan(cfg)
     refs_path = fpc.get("reference_points_file", "data/reference_points.json")
