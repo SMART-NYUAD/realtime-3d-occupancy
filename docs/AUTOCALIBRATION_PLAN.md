@@ -52,6 +52,28 @@ not video. Pre-NTP arrival timestamps are rejected by the solver. Preview heads
 are masked. Aborted/crashed recordings remain marked incomplete; inspect them
 before using `solve --allow-incomplete` to recover intact records.
 
+### Walking alone (no SPACE presses)
+
+When only the walker may be in the room, start `record` at the Thor, walk, and
+let `--seconds` end it. Visit the floor marks in a fixed order and stand on each
+for **at least 6 s** (ordinary pauses 1–2 s); marks must be seen by at least two
+cameras. Afterwards list the long pauses and get a points template:
+
+```bash
+python autocalib.py solve  --session calib/walks/run01 --out calib/rig01.json
+python autocalib.py pauses --session calib/walks/run01 --rig calib/rig01.json --out anchors.json
+# fill in each pause's measured "world": [x, y]; delete pauses not on a mark
+python autocalib.py anchor --rig calib/rig01.json --points anchors.json --out calib/anchored01.json
+python autocalib.py pauses --session calib/walks/check01 --rig calib/anchored01.json \
+  --role check --out checkpoints.json      # map positions shown: match pauses to marks
+```
+
+Pause boundaries are trimmed by the 0.25 s motion window, so a 6 s stand is
+listed as roughly 5.5 s; the default `--min-seconds 4` separates it from 2 s
+pauses. The recorder prints frames per second every 5 s and warns below 12 fps,
+the minimum for pause detection (stop the tracker; avoid displaying the window
+over SSH).
+
 ### Joint geometry and observation assumptions
 
 Pairwise normalized-image homographies seed a connected pose graph. The solver

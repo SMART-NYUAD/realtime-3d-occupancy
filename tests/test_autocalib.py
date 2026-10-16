@@ -300,6 +300,28 @@ class CalibrationTests(unittest.TestCase):
         for n, c in rig["cameras"].items():
             self.assertAlmostEqual(c["C"][2] * anchored["scale_m"], poses[n][1][2], delta=0.08)
 
+    def test_solo_walk_pauses_replace_markers(self):
+        """One person alone: no SPACE presses. Long pauses found afterwards stand
+        in for markers in both anchoring and validation."""
+        from tracker3d.autocalib.pauses import points_template, session_pauses
+        pauses, _ = session_pauses(self.rig, self.session, min_seconds=1.0)
+        truth = [m["world"] for m in self.markers]
+        self.assertEqual(len(pauses), len(truth))           # one per waypoint, in order
+        anchors = points_template(pauses[:4], "anchor")
+        for p, world in zip(anchors, truth):
+            p["world"] = world
+        anchored = anchor_rig(self.rig, anchors, self.cfg)
+        self.assertLess(max(anchored["fit_error_m"]), 0.02)
+        found, _ = session_pauses(anchored, self.validation_session, min_seconds=1.0)
+        checks = points_template(found[:6], "check")
+        for p, f, c in zip(checks, found, self.checks):
+            self.assertLess(np.linalg.norm(np.subtract(f["map_xy"], c["world"])), 0.05)
+            p["world"] = c["world"]
+        report = validate(anchored, self.validation_session, self.cfg, checks)
+        self.assertTrue(report["passed"], report["reasons"])
+        with self.assertRaises(ValueError):                  # an unfilled template is refused
+            anchor_rig(self.rig, points_template(pauses[:3], "anchor"), self.cfg)
+
     def test_robust_solve_with_pose_outliers(self):
         samples = deepcopy(self.samples)
         rng = np.random.default_rng(6)
@@ -384,7 +406,7 @@ class CalibrationTests(unittest.TestCase):
         r = subprocess.run([sys.executable, "autocalib.py", "--help"], cwd=ROOT,
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("record,solve,anchor,validate,export", r.stdout)
+        self.assertIn("record,solve,pauses,anchor,validate,export", r.stdout)
         r = subprocess.run([sys.executable, "-c", "import sys; import autocalib; "
                             "import tracker3d.autocalib.solve; "
                             "assert 'ultralytics' not in sys.modules; assert 'gi' not in sys.modules"],

@@ -14,14 +14,14 @@ from tracker3d.autocalib.session import load_session, read_json, write_json
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("record", "solve", "anchor", "validate", "export"):
+    for name in ("record", "solve", "pauses", "anchor", "validate", "export"):
         p = sub.add_parser(name)
         p.add_argument("--config", default="config.yaml")
         p.add_argument("--out", required=True, help="new output file or directory (never overwritten)")
-        if name in ("solve", "validate"):
+        if name in ("solve", "validate", "pauses"):
             p.add_argument("--session", required=True, help="recorded session directory")
             p.add_argument("--allow-incomplete", action="store_true", help="recover intact records after a crash")
-        if name in ("anchor", "validate", "export"):
+        if name in ("anchor", "validate", "export", "pauses"):
             p.add_argument("--rig", required=True, help="solve output for anchor; anchored output otherwise")
         if name == "record":
             p.add_argument("--seconds", type=float, default=120)
@@ -37,6 +37,11 @@ def main(argv=None):
             p.add_argument("--refine-focal", action="store_true", help="try bounded +/-3%% focal refinement")
             p.add_argument("--max-nfev", type=int, default=1500,
                            help="optimizer evaluation limit; reaching it is recorded, not fatal")
+        elif name == "pauses":
+            p.add_argument("--min-seconds", type=float, default=4.0,
+                           help="shortest pause to list; stand on floor marks longer than this")
+            p.add_argument("--role", choices=["anchor", "check"], default="anchor",
+                           help="role written into the template (check for a validation walk)")
         elif name == "anchor":
             p.add_argument("--points", help="JSON list of {marker or t, world:[x,y], role:anchor|check}; otherwise GUI")
         elif name == "validate":
@@ -59,6 +64,23 @@ def main(argv=None):
             write_json(args.out, result)
             print(json.dumps({"saved": args.out, "counts": result["counts"],
                               "heldout": result["heldout"], "focal_refinement": result["focal_refinement"]}, indent=2))
+        elif args.command == "pauses":
+            from tracker3d.autocalib.pauses import points_template, session_pauses
+            pauses, counts = session_pauses(read_json(args.rig),
+                                            load_session(args.session, args.allow_incomplete),
+                                            args.min_seconds)
+            if not pauses:
+                raise ValueError(f"no pauses of {args.min_seconds:g} s or longer found "
+                                 f"(usable samples: {counts.get('samples', 0)})")
+            for p in pauses:
+                where = (f"map ({p['map_xy'][0]:.2f}, {p['map_xy'][1]:.2f})" if "map_xy" in p
+                         else "position known after anchoring")
+                print(f"pause {p['number']:2d}: {p['seconds']:4.1f} s long, "
+                      f"{p['seconds_into_walk']:5.0f} s into the walk, {where}")
+            write_json(args.out, points_template(pauses, args.role))
+            print(f"Saved {args.out}: fill in each pause's measured map position ('world': [x, y]), "
+                  "delete pauses that were not on a floor mark, then use it with "
+                  + ("anchor --points" if args.role == "anchor" else "validate --checkpoints"))
         elif args.command == "anchor":
             from tracker3d.autocalib.anchor import anchor_rig, pick_map_points
             rig, cfg = read_json(args.rig), load_config(args.config)

@@ -10,6 +10,9 @@ from tracker3d.config import list_cameras
 from tracker3d.lens import load_lens
 from .session import SessionWriter
 
+# Pause detection needs >= 3 frames in each 0.25 s half-window (observations.py).
+MIN_RECORD_FPS = 12
+
 
 def record_walk(cfg, out, seconds=120, headless=False):
     if seconds <= 0:
@@ -50,6 +53,7 @@ def record_walk(cfg, out, seconds=120, headless=False):
           "at >=12 well-spread positions with feet visible. SPACE marks a named map/checkpoint "
           "pause; q finishes. Headless sessions can identify pauses by timestamps in a points JSON.")
     start, last_stats = time.monotonic(), time.monotonic()
+    last_counts = Counter()
     try:
         group = SyncGroup(cams, cfg["sync"])
         while time.monotonic() - start < seconds:
@@ -112,9 +116,17 @@ def record_walk(cfg, out, seconds=120, headless=False):
                     writer.append({"kind": "marker", "name": f"M{marker}", "t": last_target})
                     print(f"Marked M{marker} at capture time {last_target:.3f}; stay still for another second")
             if time.monotonic() - last_stats >= 5:
-                print(f"{time.monotonic() - start:.0f}s | frames {dict(counts)} | "
+                elapsed = time.monotonic() - last_stats
+                fps = {n: (counts[n] - last_counts[n]) / elapsed for n in snapshots}
+                print(f"{time.monotonic() - start:.0f}s | fps { {n: round(v, 1) for n, v in fps.items()} } | "
                       f"candidate ankle pairs {dict(pairs)} | "
                       f"coverage { {n: len(v) for n, v in coverage.items()} }")
+                slow = [n for n, v in fps.items() if v < MIN_RECORD_FPS]
+                if slow and time.monotonic() - start > 15:   # allow for warm-up
+                    print(f"WARNING: {slow} below {MIN_RECORD_FPS} frames/s. The solver cannot "
+                          "tell pauses from walking at this rate: stop the tracker, avoid "
+                          "showing the window over SSH, then record again.")
+                last_counts = Counter(counts)
                 last_stats = time.monotonic()
             if not counts and time.monotonic() - start > 20:
                 raise ValueError("no camera frames after 20 seconds; check streams and NTP")
