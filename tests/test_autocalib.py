@@ -434,6 +434,43 @@ class CalibrationTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, f"{command[0]}: {r.stderr}\n{r.stdout}")
         self.assertTrue((self.base / "cli-candidate/config.yaml").exists())
 
+    def test_watchdog_reconnects_a_laggy_stream_that_still_delivers_frames(self):
+        """A camera whose frames keep arriving (every ~50 ms) but trail real time
+        must still be reconnected; the start-up grace must not hide the lag."""
+        module = self._gst_module()
+        stream = module.SyncCameraStream.__new__(module.SyncCameraStream)
+        stream._lock, stream._lag_since = threading.Lock(), None
+        stream._latency_ms, stream._buffer_sec = 100, 1.0
+        stream._reconnect_stuck_s, stream._reconnect_lag_s = 3.0, 0.7
+        now = 10_000.0
+        stream._connected_at = now - 600          # running for 10 minutes
+        stream._last_recv = now - 0.05            # a frame arrived 50 ms ago
+        stream._last_t = now - 0.9                # ...captured 0.9 s ago
+        self.assertIsNone(stream._watchdog_check(now))           # starts the lag timer
+        self.assertIn("laggy", stream._watchdog_check(now + 0.8))  # sustained -> reconnect
+        stream._connected_at = now + 0.5          # just reconnected: grace period
+        stream._lag_since = None
+        self.assertIsNone(stream._watchdog_check(now + 1.0))
+        stream._connected_at, stream._last_recv = now - 600, now - 5   # frames stopped
+        self.assertIn("stuck", stream._watchdog_check(now))
+        stream._last_recv, stream._last_t = now - 0.05, now - 0.2      # healthy
+        self.assertIsNone(stream._watchdog_check(now))
+
+    def _gst_module(self):
+        gst = types.SimpleNamespace(init=lambda _: None,
+                                    FlowReturn=types.SimpleNamespace(OK=0),
+                                    PadProbeReturn=types.SimpleNamespace(OK=0),
+                                    MapFlags=types.SimpleNamespace(READ=1))
+        gi = types.ModuleType("gi")
+        gi.require_version = lambda *args: None
+        repository = types.ModuleType("gi.repository")
+        repository.Gst = gst
+        with patch.dict(sys.modules, {"gi": gi, "gi.repository": repository}):
+            spec = importlib.util.spec_from_file_location("capture_under_test", ROOT / "tracker3d/gst_stream.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        return module
+
     def test_capture_provenance_and_legacy_frame_api(self):
         gst = types.SimpleNamespace(init=lambda _: None,
                                     FlowReturn=types.SimpleNamespace(OK=0),

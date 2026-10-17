@@ -55,6 +55,7 @@ class SyncCameraStream:
         self._buffer_sec = float(buffer_sec)
         self._last_t = None
         self._last_recv = time.time()  # wall clock a frame last arrived (stuck watchdog)
+        self._connected_at = time.time()  # wall clock this connection started (watchdog grace)
         self._frames = 0
         self._with_ntp = 0
         self._missing_ntp = 0          # decoded frames whose NTP capture time was lost
@@ -130,6 +131,7 @@ class SyncCameraStream:
                 self._ntp_seen = False
                 self._last_t = None
                 self._last_recv = time.time()   # reset grace so the watchdog won't re-fire instantly
+                self._connected_at = time.time()
             self._lag_since = None
             try:
                 self._start_pipeline()
@@ -138,31 +140,38 @@ class SyncCameraStream:
 
     def _watchdog(self):
         """Restart the connection when the stream goes stuck or stays too laggy."""
-        # Give a fresh connection a moment to deliver its first frame before judging.
-        grace = max(self._latency_ms / 1000.0 + self._buffer_sec, 1.5)
         while self._running:
             time.sleep(0.5)
-            now = time.time()
-            with self._lock:
-                last_recv, last_t = self._last_recv, self._last_t
-            if now - last_recv < grace:
-                continue
-            # Stuck: no decoded frame has arrived in a while -> pipeline is wedged.
-            if self._reconnect_stuck_s > 0 and (now - last_recv) > self._reconnect_stuck_s:
-                self.restart(why=f"stuck ({now - last_recv:.1f}s no frames)")
-                continue
-            # Laggy: frames still arrive, but their capture time trails real time by
-            # more than the budget and stays there. Require it sustained so a single
-            # network hiccup doesn't trigger a needless reconnect.
-            if self._reconnect_lag_s > 0 and last_t is not None:
-                lag = now - last_t
-                if lag > self._reconnect_lag_s:
-                    if self._lag_since is None:
-                        self._lag_since = now
-                    elif now - self._lag_since > self._reconnect_lag_s:
-                        self.restart(why=f"laggy ({lag:.1f}s behind)")
-                else:
-                    self._lag_since = None
+            why = self._watchdog_check(time.time())
+            if why:
+                self.restart(why=why)
+
+    def _watchdog_check(self, now):
+        """Reason to reconnect now, or None. Updates the sustained-lag timer."""
+        with self._lock:
+            last_recv, last_t, connected_at = self._last_recv, self._last_t, self._connected_at
+        # Give a fresh connection a moment to deliver its first frame before judging.
+        # This is time since (re)connecting, NOT since the last frame: frames arrive
+        # every ~50 ms, so a last-frame test would skip the lag check below forever.
+        grace = max(self._latency_ms / 1000.0 + self._buffer_sec, 1.5)
+        if now - connected_at < grace:
+            return None
+        # Stuck: no decoded frame has arrived in a while -> pipeline is wedged.
+        if self._reconnect_stuck_s > 0 and (now - last_recv) > self._reconnect_stuck_s:
+            return f"stuck ({now - last_recv:.1f}s no frames)"
+        # Laggy: frames still arrive, but their capture time trails real time by
+        # more than the budget and stays there. Require it sustained so a single
+        # network hiccup doesn't trigger a needless reconnect.
+        if self._reconnect_lag_s > 0 and last_t is not None:
+            lag = now - last_t
+            if lag > self._reconnect_lag_s:
+                if self._lag_since is None:
+                    self._lag_since = now
+                elif now - self._lag_since > self._reconnect_lag_s:
+                    return f"laggy ({lag:.1f}s behind)"
+            else:
+                self._lag_since = None
+        return None
 
     # ---- pipeline callbacks --------------------------------------------------
     def _on_parsed(self, pad, info, generation):
