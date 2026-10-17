@@ -322,6 +322,35 @@ class CalibrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):                  # an unfilled template is refused
             anchor_rig(self.rig, points_template(pauses[:3], "anchor"), self.cfg)
 
+    def test_anchor_from_current_calibration(self):
+        """No tape measuring: the existing per-camera calibrations place the rig.
+        Each 'current' calibration is deliberately off by 5 cm in a different
+        direction; averaging over many points must still land close to truth."""
+        from copy import deepcopy
+        from tracker3d.autocalib.anchor import anchor_from_current
+        from tracker3d.geometry import save_calibration
+        cfg = deepcopy(self.cfg)
+        shifts = {"a": (0.05, 0.0), "b": (-0.05, 0.0), "c": (0.0, 0.05)}
+        for c in cfg["cameras"]:
+            R, C = self.poses[c["name"]]
+            T = np.eye(3); T[:2, 2] = shifts[c["name"]]
+            H = T @ floor_homography(self.lens, R, C)
+            path = self.base / f"{c['name']}_current.npy"
+            lens = LensModel.load(c["intrinsics_file"])
+            save_calibration(str(path), H, self.lens.image_size, lens=lens)
+            c["homography_file"] = str(path)
+        anchored = anchor_from_current(self.rig, self.session, cfg)
+        self.assertEqual(anchored["anchor"]["method"], "current_calibration")
+        self.assertGreater(anchored["anchor"]["points_used"], 100)
+        measured = validate(anchored, self.validation_session, cfg, self.checks[:5])
+        self.assertTrue(measured["passed"], measured["reasons"])
+        self.assertLess(measured["absolute_error_m"]["max"], 0.06)
+        unmeasured = validate(anchored, self.validation_session, cfg, None, allow_unmeasured=True)
+        self.assertTrue(unmeasured["passed"], unmeasured["reasons"])
+        self.assertFalse(unmeasured["absolute_accuracy_measured"])
+        strict = validate(anchored, self.validation_session, cfg, None)
+        self.assertIn("supply independent measured floor checkpoints", strict["reasons"])
+
     def test_robust_solve_with_pose_outliers(self):
         samples = deepcopy(self.samples)
         rng = np.random.default_rng(6)

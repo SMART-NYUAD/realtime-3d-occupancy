@@ -16,7 +16,9 @@ from .session import VERSION, check_artifact, seal, write_json
 from .solve import evaluate, floor_homography, rig_geometry, statistics
 
 
-def validate(anchored, session, cfg, checkpoints=None):
+def validate(anchored, session, cfg, checkpoints=None, allow_unmeasured=False):
+    """`allow_unmeasured`: pass on camera agreement alone when no measured
+    checkpoints exist (the report then states absolute accuracy was not measured)."""
     check_artifact(anchored, "anchored_rig")
     rig = check_artifact(anchored["rig"], "rig")
     if map_identity(cfg) != anchored["map"]:
@@ -66,9 +68,9 @@ def validate(anchored, session, cfg, checkpoints=None):
         reasons.append("validation overlaps do not connect every camera")
     if not metric or metric["median"] > 0.10 or metric["p95"] > 0.25:
         reasons.append("camera disagreement exceeds median 10 cm / p95 25 cm")
-    if not absolute:
+    if not absolute and not (allow_unmeasured and independent):
         reasons.append("supply independent measured floor checkpoints")
-    elif absolute["median"] > 0.20 or absolute["max"] > 0.40:
+    elif absolute and (absolute["median"] > 0.20 or absolute["max"] > 0.40):
         reasons.append("checkpoint error exceeds median 20 cm / maximum 40 cm")
     if any(p["spread_rig"] * scale > 0.15 for p in points):
         reasons.append("checkpoint was moving; pause upright for at least one second")
@@ -105,6 +107,8 @@ def validate(anchored, session, cfg, checkpoints=None):
                  "runtime_center_agreement_m": runtime_quality,
                  "runtime_invalid_projections": runtime_invalid,
                  "checkpoints": points, "absolute_error_m": absolute,
+                 "absolute_accuracy_measured": bool(absolute),
+                 "anchor": anchored.get("anchor"),
                  "baseline_center_agreement_m": baseline,
                  "thresholds_m": {"agreement_median": 0.10, "agreement_p95": 0.25,
                                   "absolute_median": 0.20, "absolute_max": 0.40}})

@@ -44,8 +44,13 @@ def main(argv=None):
                            help="role written into the template (check for a validation walk)")
         elif name == "anchor":
             p.add_argument("--points", help="JSON list of {marker or t, world:[x,y], role:anchor|check}; otherwise GUI")
+            p.add_argument("--from-current", action="store_true",
+                           help="no measured points: place the rig using the current camera calibrations")
+            p.add_argument("--session", help="walk to use with --from-current (usually the calibration walk)")
         elif name == "validate":
             p.add_argument("--checkpoints", help="JSON list of measured points in this validation session")
+            p.add_argument("--no-checkpoints", action="store_true",
+                           help="judge camera agreement only; absolute accuracy is reported as not measured")
         elif name == "export":
             p.add_argument("--report", required=True, help="passing validate output")
     args = parser.parse_args(argv)
@@ -84,18 +89,34 @@ def main(argv=None):
         elif args.command == "anchor":
             from tracker3d.autocalib.anchor import anchor_rig, pick_map_points
             rig, cfg = read_json(args.rig), load_config(args.config)
-            points = read_json(args.points) if args.points else pick_map_points(rig, cfg)
-            result = anchor_rig(rig, points, cfg)
-            write_json(args.out, result)
-            print(f"Saved {args.out}; scale {result['scale_m']:.4f} m/unit; anchor errors {result['fit_error_m']}")
+            if args.from_current:
+                from tracker3d.autocalib.anchor import anchor_from_current
+                if not args.session:
+                    raise ValueError("--from-current needs --session (the calibration walk)")
+                result = anchor_from_current(rig, load_session(args.session), cfg)
+                write_json(args.out, result)
+                a = result["anchor"]
+                print(f"Saved {args.out}; scale {result['scale_m']:.4f} m/unit; used "
+                      f"{a['points_used']}/{a['points_total']} points from the current calibration")
+                print("Difference between new rig and current calibration, per camera (meters): "
+                      + ", ".join(f"{n} median {v['median']:.2f} / p95 {v['p95']:.2f}"
+                                  for n, v in a["residual_by_camera_m"].items()))
+            else:
+                points = read_json(args.points) if args.points else pick_map_points(rig, cfg)
+                result = anchor_rig(rig, points, cfg)
+                write_json(args.out, result)
+                print(f"Saved {args.out}; scale {result['scale_m']:.4f} m/unit; anchor errors {result['fit_error_m']}")
             print(f"Walker's reconstructed nose height: {result['nose_height_m']:.2f} m "
                   "(compare with theirs: about 10 cm below standing height)")
             for w in result["warnings"]:
                 print(f"WARNING: {w}")
         elif args.command == "validate":
             from tracker3d.autocalib.validation import validate
+            if args.no_checkpoints and args.checkpoints:
+                raise ValueError("use --checkpoints or --no-checkpoints, not both")
             report = validate(read_json(args.rig), load_session(args.session, args.allow_incomplete),
-                              load_config(args.config), read_json(args.checkpoints) if args.checkpoints else None)
+                              load_config(args.config), read_json(args.checkpoints) if args.checkpoints else None,
+                              allow_unmeasured=args.no_checkpoints)
             write_json(args.out, report)
             print(json.dumps(report, indent=2))
             return 0 if report["passed"] else 2

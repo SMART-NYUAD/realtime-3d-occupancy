@@ -115,9 +115,15 @@ def anchor_rig(rig, points, cfg):
             raise ValueError("anchor/checkpoint was moving; use a longer upright pause")
     if max(p["error_m"] for p in fit) > 0.25:
         raise ValueError("anchors disagree by >25 cm; check correspondences, orientation and map")
-    # Anchors fix the metric scale. The walker's reconstructed nose height is an
-    # independent check of it: compare with their real nose height (about 10 cm
-    # below standing height). A large mismatch means a wrong anchor or map point.
+    return _anchored(rig, S, identity, resolved, [p["error_m"] for p in fit],
+                     {"method": "measured_points"})
+
+
+def _anchored(rig, S, identity, points, fit_errors, method):
+    """Seal an anchored rig. The anchors fix the metric scale; the walker's
+    reconstructed nose height is an independent check of it (compare with their
+    real nose height, about 10 cm below standing height)."""
+    scale = float(np.linalg.norm(S[:2, 0]))
     nose_m = float(rig["body"]["nose_height"] * scale)
     warnings = []
     if not NOSE_HEIGHT_RANGE_M[0] <= nose_m <= NOSE_HEIGHT_RANGE_M[1]:
@@ -125,8 +131,91 @@ def anchor_rig(rig, points, cfg):
                         "check anchor correspondences and the map scale")
     return seal({"version": VERSION, "kind": "anchored_rig", "rig": rig,
                  "transform": S.tolist(), "scale_m": scale, "map": identity,
-                 "points": resolved, "fit_error_m": [p["error_m"] for p in fit],
-                 "nose_height_m": nose_m, "warnings": warnings})
+                 "points": points, "fit_error_m": fit_errors,
+                 "nose_height_m": nose_m, "warnings": warnings, "anchor": method})
+
+
+def current_calibration_pairs(rig, session, cfg):
+    """(rig floor xy, map xy, camera) pairs at every usable sample of `session`.
+
+    For each sample the joint rig gives the walker's position. The floor point
+    beneath it is projected into each camera that saw the walker, and the
+    camera's CURRENT calibration maps that pixel to the map. No tape measuring:
+    the new rig inherits the existing map placement, averaged over hundreds of
+    points and all cameras."""
+    from tracker3d.geometry import FloorProjector
+    from tracker3d.lens import load_lens
+    from .observations import prepare
+    from .solve import intersect_plane, project_raw, rig_geometry
+
+    poses, lenses = rig_geometry(rig)
+    current = {}
+    for c in cfg["cameras"]:
+        lens, _ = load_lens(c)
+        proj = FloorProjector.load(c["homography_file"], lens)
+        size = lens.image_size if lens is not None else tuple(
+            rig["cameras"][c["name"]]["lens"]["image_size"])
+        proj.set_frame_size(*size)
+        current[c["name"]] = (proj, size)
+    if set(current) != set(poses):
+        raise ValueError("configured cameras differ from the solved rig")
+    samples, _, _ = prepare(session, **rig["sampling"])
+    ankle_z = rig["body"]["ankle_z"]
+    pairs = []
+    for s in samples:
+        feet = {}
+        for n, v in s["views"].items():
+            try:
+                feet[n] = intersect_plane(*poses[n], v["rays"][:2], ankle_z).mean(axis=0)
+            except ValueError:
+                pass
+        if len(feet) < 2:
+            continue
+        xy = np.median(list(feet.values()), axis=0)
+        for n in feet:
+            px, depth = project_raw(lenses[n], *poses[n], np.array([[xy[0], xy[1], 0.0]]))
+            proj, (w, h) = current[n]
+            u, v = px[0]
+            if depth[0] <= 0 or not (0 <= u < w and 0 <= v < h):
+                continue
+            world = proj.to_floor(u, v)
+            if world is not None:
+                pairs.append((xy.tolist(), list(world), n))
+    return pairs
+
+
+def anchor_from_current(rig, session, cfg, trim=3.0):
+    """Anchor the rig to the map using the current per-camera calibrations."""
+    check_artifact(rig, "rig")
+    recorded = session["manifest"]["cameras"]
+    for n in recorded:
+        if n not in rig["cameras"] or recorded[n]["lens"]["fingerprint"] != \
+                rig["cameras"][n]["input_lens_fingerprint"]:
+            raise ValueError(f"{n}: session lens differs from the solved rig")
+    pairs = current_calibration_pairs(rig, session, cfg)
+    cams = {p[2] for p in pairs}
+    if len(pairs) < 30 or len(cams) < 2:
+        raise ValueError(f"only {len(pairs)} usable points from {len(cams)} camera(s); "
+                         "walk more of the shared floor")
+    identity = map_identity(cfg)
+    src = np.array([p[0] for p in pairs])
+    dst = np.array([p[1] for p in pairs])
+    keep = np.ones(len(pairs), bool)
+    for _ in range(3):                      # robust: drop gross outliers, refit
+        S = fit_similarity(src[keep], dst[keep], handedness=identity["handedness"])
+        res = np.linalg.norm(apply_transform(S, src) - dst, axis=1)
+        new = res <= max(trim * np.median(res[keep]), 0.15)
+        if new.sum() < 30 or (new == keep).all():
+            break
+        keep = new
+    from .solve import statistics
+    per_camera = {n: statistics(res[keep & np.array([p[2] == n for p in pairs])]) for n in sorted(cams)}
+    return _anchored(rig, S, identity, [], [float(np.median(res[keep]))],
+                     {"method": "current_calibration", "points_used": int(keep.sum()),
+                      "points_total": len(pairs),
+                      "residual_m": statistics(res[keep]), "residual_by_camera_m": per_camera,
+                      "note": "absolute placement inherits the current calibration; "
+                              "only measured checkpoints can test absolute accuracy"})
 
 
 def pick_map_points(rig, cfg):

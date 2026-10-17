@@ -74,6 +74,28 @@ pauses. The recorder prints frames per second every 5 s and warns below 12 fps,
 the minimum for pause detection (stop the tracker; avoid displaying the window
 over SSH).
 
+### Anchoring without measured points
+
+When floor marks cannot be measured, place the rig using the current per-camera
+calibrations instead:
+
+```bash
+python autocalib.py anchor --rig calib/rig01.json --from-current \
+  --session calib/walks/run01 --out calib/anchored01.json
+python autocalib.py validate --rig calib/anchored01.json --session calib/walks/check02 \
+  --no-checkpoints --out calib/report01.json
+```
+
+For every usable sample, the floor point beneath the walker (from the joint rig)
+is projected into each camera that saw them, and that camera's current
+calibration maps the pixel to the map. A robust similarity fit over hundreds of
+such points places the rig, and the per-camera difference to the current
+calibration is reported. The new rig therefore inherits the existing map
+placement used by the digital twin; camera-to-camera agreement is still measured
+independently by the validation walk, but absolute accuracy is reported as
+**not measured** (`absolute_accuracy_measured: false`). The walker's
+reconstructed nose height remains an independent check of the scale.
+
 ### Joint geometry and observation assumptions
 
 Pairwise normalized-image homographies seed a connected pose graph. The solver
