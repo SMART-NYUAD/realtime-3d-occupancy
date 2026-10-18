@@ -35,3 +35,7 @@ calib/intrinsics_frames/
 charuco_*.pdf
 charuco_*.png
 lens_check_*.jpg
+
+# Local calibration walks (body keypoints) and exported trial configurations
+calib/walks/
+calib/candidates/

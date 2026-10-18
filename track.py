@@ -142,6 +142,10 @@ def main():
     args = ap.parse_args()
     load_env()
     cfg = load_config(args.config)
+    if cfg.get("autocalibration"):
+        from tracker3d.autocalib.anchor import map_identity
+        if map_identity(cfg) != cfg["autocalibration"]["map"]:
+            raise ValueError("Map changed since rig anchoring; run autocalib.py anchor again.")
     ocfg, fcfg = cfg["output"], cfg.get("fusion", {})
 
     cams = list_cameras(cfg)

@@ -4,6 +4,12 @@ Review of the tracker as of commit `8ac30e9` (main), and what the
 `refactor/thor-cleanup-optimize` branch changed. Status: **Fixed** (on this
 branch), **Open** (known, not done), **Roadmap** (planned larger work).
 
+Update: all three cameras now have lens calibrations and matching lens-aware
+floor calibrations. Walk recording, joint pose solving and shared map anchoring
+are implemented in `autocalib.py`; see `AUTOCALIBRATION_PLAN.md` for the current
+workflow, quality caveats and pending lab validation. The review below is a
+historical snapshot.
+
 ## 1. Real-time capture / tracking bugs
 
 | # | Issue | Impact | Status |

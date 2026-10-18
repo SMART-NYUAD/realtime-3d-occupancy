@@ -33,7 +33,20 @@ class Localizer:
             p["foot_px"], p["foot_source"] = (fx, fy), src
             if proj is None:
                 continue
-            w = proj.to_floor(fx, fy)
+            # Joint calibration models anatomical ankles above the floor. Project
+            # each visible ankle separately, then average in world space; averaging
+            # image pixels first is not invariant under perspective projection.
+            ankle_points = None
+            if proj.ankle_H is not None and src in ("ankle", "ankles"):
+                ankle_points = [p["kxy"][i] for i in (15, 16) if p["kconf"][i] >= self.kp_conf]
+
+            def locate(dy=0):
+                if ankle_points is None:
+                    return proj.to_floor(fx, fy + dy)
+                xy = [proj.to_floor(u, v + dy, plane="ankle") for u, v in ankle_points]
+                return tuple(np.mean(xy, axis=0)) if all(q is not None for q in xy) else None
+
+            w = locate()
             # Occluded/clipped foot points can land in impossible places (outside
             # the room); drop those before they reach fusion.
             if w is None or not self.plan.in_valid_area(*w):
@@ -41,7 +54,7 @@ class Localizer:
             p["world"] = w
             # Pixel sigma -> meters through the homography: distance-aware for free
             # (the same pixel error is more meters far from the camera).
-            w2 = proj.to_floor(fx, fy + sig_px)
+            w2 = locate(sig_px)
             p["foot_sigma_m"] = (float(np.clip(np.hypot(w2[0] - w[0], w2[1] - w[1]), 0.03, 2.0))
                                  if w2 is not None else 0.5)
             if self.use_blob:

@@ -114,7 +114,8 @@ sync:
   # camera ~95% of the time). A per-camera watchdog tears the pipeline down and
   # brings it back up; the other cameras keep running while it reconnects. 0 = off.
   reconnect_stuck_ms: 3000  # no decoded frame arrives for this long -> reconnect
-  reconnect_lag_ms: 2000    # frames keep arriving but trail real time by more than
+  # Keep below lag_budget_ms, so a lagging camera reconnects before it is left out.
+  reconnect_lag_ms: 450     # frames keep arriving but trail real time by more than
                             # this, sustained -> reconnect (0 = don't reconnect on lag)
 
 fusion:
@@ -210,3 +211,19 @@ output:
     trail_length: 10
     qos: 0
     retain: false
+
+# Joint camera calibration (autocalib.py), now the default: calib/<cam>_homography.*
+# were produced from a calibration walk, anchored to the existing map placement and
+# validated on an independent walk (records in calib/autocalib/). track.py refuses
+# to start if the map scan or its orientation settings change, since that would
+# move the map frame these calibrations are anchored to.
+autocalibration:
+  anchored_id: 879a2688ddfdbea01c0ff7791939a22d1f72108fe15e7da61e158bfcdc747979
+  map:
+    scan_sha256: d29ea552906d8b3f5a39bd292388c6981dfa8645053bee12efebaa0234abc28b
+    up_axis: auto
+    resolved_up_axis: y
+    handedness: 1
+    flip_x: true
+    flip_y: false
+    clip_percentile: 0.2

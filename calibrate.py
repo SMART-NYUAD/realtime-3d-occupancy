@@ -36,7 +36,7 @@ import numpy as np
 
 from tracker3d.capture import open_capture
 from tracker3d.config import get_camera, list_cameras, load_config
-from tracker3d.geometry import compute_homography, fit_errors, save_calibration
+from tracker3d.geometry import compute_homography, fit_errors, save_calibration, load_calibration_meta
 from tracker3d.lens import load_lens
 from tracker3d.plan import load_plan
 from tracker3d.render import MARK_NEW, MARK_PENDING, MARK_SHARED, MARK_USED, draw_marker
@@ -218,10 +218,16 @@ def main():
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--camera", default=None, help="camera name (default: first)")
     ap.add_argument("--frame", default=None, help="use a saved image instead of live camera")
+    ap.add_argument("--manual-override", action="store_true", help="replace a joint calibration independently")
     args = ap.parse_args()
     cfg = load_config(args.config)
 
     cam = get_camera(cfg, args.camera) if args.camera else list_cameras(cfg)[0]
+    if load_calibration_meta(cam["homography_file"]).get("source") == "autocalib":
+        if not args.manual_override:
+            raise SystemExit("This camera belongs to a jointly solved rig. Re-anchor with autocalib.py, "
+                             "or use --manual-override to replace its calibration independently.")
+        print("Manual override: this camera will no longer share the jointly solved geometry.")
     fpc = cfg["floorplan"]
     fp = load_plan(cfg)
     refs_path = fpc.get("reference_points_file", "data/reference_points.json")

@@ -49,12 +49,13 @@ class SyncCameraStream:
                  retransmission=True, reconnect_stuck_s=3.0, reconnect_lag_s=0.0):
         self.name = cam["name"]
         self.source = str(cam["source"])
-        self._buf = deque()            # (capture_t, frame), oldest -> newest
+        self._buf = deque()            # (capture_t, frame, provenance), oldest -> newest
         self._ntp_by_pts = {}          # buffer PTS (ns) -> capture_t (unix s)
         self._lock = threading.Lock()
         self._buffer_sec = float(buffer_sec)
         self._last_t = None
         self._last_recv = time.time()  # wall clock a frame last arrived (stuck watchdog)
+        self._connected_at = time.time()  # wall clock this connection started (watchdog grace)
         self._frames = 0
         self._with_ntp = 0
         self._missing_ntp = 0          # decoded frames whose NTP capture time was lost
@@ -106,9 +107,9 @@ class SyncCameraStream:
         )
         self.pipe = Gst.parse_launch(pipeline)
         self.pipe.get_by_name("parse").get_static_pad("src").add_probe(
-            Gst.PadProbeType.BUFFER, self._on_parsed)
+            Gst.PadProbeType.BUFFER, self._on_parsed, self._reconnects)
         self._sink = self.pipe.get_by_name("sink")
-        self._sink.connect("new-sample", self._on_sample)   # fires on the streaming thread
+        self._sink.connect("new-sample", self._on_sample, self._reconnects)
         self.pipe.set_state(Gst.State.PLAYING)
 
     def restart(self, why="manual"):
@@ -117,7 +118,8 @@ class SyncCameraStream:
         with self._build_lock:
             if not self._running:
                 return
-            self._reconnects += 1
+            with self._lock:
+                self._reconnects += 1
             print(f"[{self.name}] {why} — restarting connection (#{self._reconnects})", flush=True)
             try:
                 self.pipe.set_state(Gst.State.NULL)
@@ -129,6 +131,7 @@ class SyncCameraStream:
                 self._ntp_seen = False
                 self._last_t = None
                 self._last_recv = time.time()   # reset grace so the watchdog won't re-fire instantly
+                self._connected_at = time.time()
             self._lag_since = None
             try:
                 self._start_pipeline()
@@ -137,71 +140,83 @@ class SyncCameraStream:
 
     def _watchdog(self):
         """Restart the connection when the stream goes stuck or stays too laggy."""
-        # Give a fresh connection a moment to deliver its first frame before judging.
-        grace = max(self._latency_ms / 1000.0 + self._buffer_sec, 1.5)
         while self._running:
             time.sleep(0.5)
-            now = time.time()
-            with self._lock:
-                last_recv, last_t = self._last_recv, self._last_t
-            if now - last_recv < grace:
-                continue
-            # Stuck: no decoded frame has arrived in a while -> pipeline is wedged.
-            if self._reconnect_stuck_s > 0 and (now - last_recv) > self._reconnect_stuck_s:
-                self.restart(why=f"stuck ({now - last_recv:.1f}s no frames)")
-                continue
-            # Laggy: frames still arrive, but their capture time trails real time by
-            # more than the budget and stays there. Require it sustained so a single
-            # network hiccup doesn't trigger a needless reconnect.
-            if self._reconnect_lag_s > 0 and last_t is not None:
-                lag = now - last_t
-                if lag > self._reconnect_lag_s:
-                    if self._lag_since is None:
-                        self._lag_since = now
-                    elif now - self._lag_since > self._reconnect_lag_s:
-                        self.restart(why=f"laggy ({lag:.1f}s behind)")
-                else:
-                    self._lag_since = None
+            why = self._watchdog_check(time.time())
+            if why:
+                self.restart(why=why)
+
+    def _watchdog_check(self, now):
+        """Reason to reconnect now, or None. Updates the sustained-lag timer."""
+        with self._lock:
+            last_recv, last_t, connected_at = self._last_recv, self._last_t, self._connected_at
+        # Give a fresh connection a moment to deliver its first frame before judging.
+        # This is time since (re)connecting, NOT since the last frame: frames arrive
+        # every ~50 ms, so a last-frame test would skip the lag check below forever.
+        grace = max(self._latency_ms / 1000.0 + self._buffer_sec, 1.5)
+        if now - connected_at < grace:
+            return None
+        # Stuck: no decoded frame has arrived in a while -> pipeline is wedged.
+        if self._reconnect_stuck_s > 0 and (now - last_recv) > self._reconnect_stuck_s:
+            return f"stuck ({now - last_recv:.1f}s no frames)"
+        # Laggy: frames still arrive, but their capture time trails real time by
+        # more than the budget and stays there. Require it sustained so a single
+        # network hiccup doesn't trigger a needless reconnect.
+        if self._reconnect_lag_s > 0 and last_t is not None:
+            lag = now - last_t
+            if lag > self._reconnect_lag_s:
+                if self._lag_since is None:
+                    self._lag_since = now
+                elif now - self._lag_since > self._reconnect_lag_s:
+                    return f"laggy ({lag:.1f}s behind)"
+            else:
+                self._lag_since = None
+        return None
 
     # ---- pipeline callbacks --------------------------------------------------
-    def _on_parsed(self, pad, info):
+    def _on_parsed(self, pad, info, generation):
         """Pre-decode: stash NTP capture time keyed by PTS."""
+        if generation != self._reconnects:
+            return Gst.PadProbeReturn.OK
         buf = info.get_buffer()
         meta = buf.get_reference_timestamp_meta()
         if meta is not None and buf.pts != Gst.CLOCK_TIME_NONE:
-            self._ntp_by_pts[buf.pts] = _ntp_ns_to_unix(meta.timestamp)
-            if len(self._ntp_by_pts) > 240:        # bound: drop oldest unmatched
-                for k in list(self._ntp_by_pts)[:120]:
-                    self._ntp_by_pts.pop(k, None)
+            with self._lock:
+                if generation != self._reconnects:
+                    return Gst.PadProbeReturn.OK
+                self._ntp_by_pts[buf.pts] = _ntp_ns_to_unix(meta.timestamp)
+                if len(self._ntp_by_pts) > 240:        # bound: drop oldest unmatched
+                    for k in list(self._ntp_by_pts)[:120]:
+                        self._ntp_by_pts.pop(k, None)
         return Gst.PadProbeReturn.OK
 
-    def _on_sample(self, sink):
+    def _on_sample(self, sink, generation):
+        if generation != self._reconnects:
+            return Gst.FlowReturn.OK
         sample = sink.emit("pull-sample")
         if sample is None:
             return Gst.FlowReturn.OK
         buf = sample.get_buffer()
         s = sample.get_caps().get_structure(0)
         w, h = s.get_value("width"), s.get_value("height")
-        cap_t = self._ntp_by_pts.pop(buf.pts, None)
-        if cap_t is not None:
-            self._with_ntp += 1
-            if not self._ntp_seen:
-                # First RTCP sender report: frames buffered so far carry ARRIVAL
-                # time (a later clock than NTP capture time). Drop them so the
-                # buffer never mixes the two clocks (wrong order, bad alignment).
-                with self._lock:
-                    self._buf.clear()
-                self._ntp_seen = True
-        else:
-            self._missing_ntp += 1
-            # An NTP stream hitting a dropout: stamping with arrival time (now) would
-            # put this frame on a *different* clock than the buffered NTP frames
-            # (which are one pipeline-latency old), inverting their order and making
-            # the buffer_sec trim evict good frames. Drop it instead -- the camera
-            # just has no fresh frame until NTP resumes, which is the honest state.
-            if self._ntp_seen:
+        with self._lock:
+            if generation != self._reconnects:
                 return Gst.FlowReturn.OK
-            cap_t = time.time()                    # never had NTP -> arrival time is all we have
+            cap_t = self._ntp_by_pts.pop(buf.pts, None)
+            timestamp_source = "ntp" if cap_t is not None else "arrival"
+            if cap_t is not None:
+                self._with_ntp += 1
+                if not self._ntp_seen:
+                    # First RTCP report: discard arrival-clock frames before
+                    # switching to the shared NTP capture clock.
+                    self._buf.clear()
+                    self._ntp_seen = True
+            else:
+                self._missing_ntp += 1
+                # Never mix arrival time back into an established NTP stream.
+                if self._ntp_seen:
+                    return Gst.FlowReturn.OK
+                cap_t = time.time()
         ok, mi = buf.map(Gst.MapFlags.READ)
         if not ok:
             return Gst.FlowReturn.OK
@@ -212,8 +227,12 @@ class SyncCameraStream:
         finally:
             buf.unmap(mi)
         with self._lock:
+            if generation != self._reconnects:
+                return Gst.FlowReturn.OK
             self._frames += 1
-            self._buf.append((cap_t, frame))
+            self._buf.append((cap_t, frame, {"timestamp_source": timestamp_source,
+                                            "generation": generation,
+                                            "frame_id": self._frames}))
             cutoff = cap_t - self._buffer_sec
             while self._buf and self._buf[0][0] < cutoff:
                 self._buf.popleft()
@@ -229,16 +248,21 @@ class SyncCameraStream:
     def latest(self):
         """Newest (capture_t, frame) or None."""
         with self._lock:
-            return self._buf[-1] if self._buf else None
+            return self._buf[-1][:2] if self._buf else None
 
     def frame_at(self, t, tol):
         """(capture_t, frame) whose capture time is nearest t within tol seconds, else None."""
+        got = self.frame_at_with_metadata(t, tol)
+        return got[:2] if got is not None else None
+
+    def frame_at_with_metadata(self, t, tol):
+        """Return provenance belonging to this exact frame, including after reconnects."""
         with self._lock:
             best, bd = None, tol
-            for ct, fr in self._buf:
+            for ct, fr, meta in self._buf:
                 d = abs(ct - t)
                 if d <= bd:
-                    bd, best = d, (ct, fr)
+                    bd, best = d, (ct, fr, dict(meta))
             return best
 
     def stats(self):

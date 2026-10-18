@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "kind": "validation",
+  "anchored_id": "879a2688ddfdbea01c0ff7791939a22d1f72108fe15e7da61e158bfcdc747979",
+  "session_id": "2f3d37e1a9ea403772164a08a0f1ceae771fe7f7c287ddeb77ba7aa0ad62b8ea",
+  "independent_recording": true,
+  "map": {
+    "scan_sha256": "d29ea552906d8b3f5a39bd292388c6981dfa8645053bee12efebaa0234abc28b",
+    "up_axis": "auto",
+    "resolved_up_axis": "y",
+    "handedness": 1,
+    "flip_x": true,
+    "flip_y": false,
+    "clip_percentile": 0.2
+  },
+  "passed": true,
+  "reasons": [],
+  "counts": {
+    "person_count": 1088,
+    "occluded_or_clipped": 1859,
+    "usable_frames": 6206,
+    "moving": 1117,
+    "samples": 201
+  },
+  "agreement_m": {
+    "count": 1018,
+    "median": 0.0737177023321625,
+    "p95": 0.24718894157147767,
+    "max": 0.9462450581360299
+  },
+  "quality": {
+    "agreement_rig_units": {
+      "count": 1018,
+      "median": 0.028642083004303563,
+      "p95": 0.09604214399323799,
+      "max": 0.36765157676000465
+    },
+    "interpolation_bracket_ms": {
+      "count": 556,
+      "median": 51.70559883117676,
+      "p95": 101.00030899047852,
+      "max": 119.99988555908203
+    },
+    "pairs": {
+      "yi01/yi04": {
+        "count": 314,
+        "median": 0.024515292087291647,
+        "p95": 0.05127433350505439,
+        "max": 0.29262716260151406
+      },
+      "yi01/yi05": {
+        "count": 352,
+        "median": 0.03399917436532934,
+        "p95": 0.1032737656947738,
+        "max": 0.13935140283483358
+      },
+      "yi04/yi05": {
+        "count": 352,
+        "median": 0.03169488189702252,
+        "p95": 0.10427012783675163,
+        "max": 0.36765157676000465
+      }
+    },
+    "reprojection_px": {
+      "yi04": {
+        "count": 358,
+        "median": 15.86925022775918,
+        "p95": 31.87077781318452,
+        "max": 70.61223462743607
+      },
+      "yi01": {
+        "count": 358,
+        "median": 9.112358718617074,
+        "p95": 44.83724349323927,
+        "max": 91.12094724755619
+      },
+      "yi05": {
+        "count": 396,
+        "median": 7.935472950288116,
+        "p95": 17.749468045656837,
+        "max": 49.501681467689664
+      }
+    },
+    "invalid_projections": 0
+  },
+  "runtime_center_agreement_m": {
+    "count": 509,
+    "median": 0.07584963940183781,
+    "p95": 0.2499259941710475,
+    "max": 0.9065494233562988
+  },
+  "runtime_invalid_projections": 0,
+  "checkpoints": [],
+  "absolute_error_m": null,
+  "absolute_accuracy_measured": false,
+  "anchor": {
+    "method": "current_calibration",
+    "points_used": 606,
+    "points_total": 606,
+    "residual_m": {
+      "count": 606,
+      "median": 0.11201294017925992,
+      "p95": 0.20864511670242186,
+      "max": 0.21535226610976363
+    },
+    "residual_by_camera_m": {
+      "yi01": {
+        "count": 153,
+        "median": 0.14144674414532443,
+        "p95": 0.19628810563053092,
+        "max": 0.21459861670265604
+      },
+      "yi04": {
+        "count": 195,
+        "median": 0.07427831475783486,
+        "p95": 0.117904568948933,
+        "max": 0.19448384606954125
+      },
+      "yi05": {
+        "count": 258,
+        "median": 0.14540466710792332,
+        "p95": 0.20875009597342978,
+        "max": 0.21535226610976363
+      }
+    },
+    "note": "absolute placement inherits the current calibration; only measured checkpoints can test absolute accuracy"
+  },
+  "baseline_center_agreement_m": {
+    "count": 509,
+    "median": 0.37657735212871235,
+    "p95": 0.7120166868996193,
+    "max": 0.8931414198818678
+  },
+  "thresholds_m": {
+    "agreement_median": 0.1,
+    "agreement_p95": 0.25,
+    "absolute_median": 0.2,
+    "absolute_max": 0.4
+  },
+  "id": "73a8cd861031025f23f5d52b51c6cf2a461d149710b5f56040d3680967e07ffa"
+}

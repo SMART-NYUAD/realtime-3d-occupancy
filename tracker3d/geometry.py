@@ -71,17 +71,20 @@ def _sidecar(path):
     return os.path.splitext(path)[0] + ".json"
 
 
-def save_calibration(path, H, image_size, pairs=None, lens=None):
+def save_calibration(path, H, image_size, pairs=None, lens=None, extra=None):
     """Write H (.npy) + sidecar JSON {image_size: [w, h], pairs: [...], lens: {...}}.
 
     `lens` is the LensModel H was fitted with (H then expects rectified pixels);
     its fingerprint lets FloorProjector refuse a mismatched lens later."""
+    if extra and set(extra) & {"image_size", "pairs", "lens"}:
+        raise ValueError("extra calibration metadata cannot replace image_size, pairs or lens")
     np.save(path, H)
     meta = {"image_size": [int(image_size[0]), int(image_size[1])]}
     if lens is not None:
         meta["lens"] = {"file": lens.path, "fingerprint": lens.fingerprint()}
     if pairs is not None:
         meta["pairs"] = pairs
+    meta.update(extra or {})
     with open(_sidecar(path), "w") as f:
         json.dump(meta, f, indent=2)
 
@@ -103,10 +106,15 @@ class FloorProjector:
     undistort (if a lens is attached) -> H0. Without a lens this equals the old
     H0 @ diag(scale)."""
 
-    def __init__(self, H, calib_size=None, lens=None):
+    def __init__(self, H, calib_size=None, lens=None, ankle_H=None):
         self.H0 = np.asarray(H, np.float64)
-        if abs(np.linalg.det(self.H0)) < _EPS:
+        if (self.H0.shape != (3, 3) or not np.isfinite(self.H0).all()
+                or abs(np.linalg.det(self.H0)) < _EPS):
             raise ValueError("homography is degenerate (singular) — recalibrate.")
+        self.ankle_H = np.asarray(ankle_H, np.float64) if ankle_H is not None else None
+        if self.ankle_H is not None and (self.ankle_H.shape != (3, 3)
+                or not np.isfinite(self.ankle_H).all() or abs(np.linalg.det(self.ankle_H)) < _EPS):
+            raise ValueError("ankle-plane homography is invalid")
         self.calib_size = tuple(calib_size) if calib_size else None
         if lens is not None and self.calib_size:
             lens = lens.scaled(*self.calib_size)
@@ -116,6 +124,7 @@ class FloorProjector:
         self.H = self.H0          # raw-pixel homography; only meaningful without a lens
         self._scale = (1.0, 1.0)  # frame px -> calibration px
         self._sign = 0.0
+        self._ankle_sign = 0.0
 
     @classmethod
     def load(cls, path, lens=None):
@@ -132,7 +141,8 @@ class FloorProjector:
                 f"{path} was fitted with lens {need} but the configured lens is "
                 f"{have or 'none'} — fix intrinsics_file or recalibrate (calibrate.py).")
         ignored = lens is not None and not need
-        proj = cls(np.load(path), meta.get("image_size"), None if ignored else lens)
+        proj = cls(np.load(path), meta.get("image_size"), None if ignored else lens,
+                   ankle_H=meta.get("ankle_homography"))
         if ignored:
             proj.lens_status = ("IGNORED: homography predates the lens file — "
                                 "re-click with calibrate.py to use it")
@@ -153,6 +163,9 @@ class FloorProjector:
         r = self.to_rect(w / 2.0, h - 1.0)
         wz = (self.H0 @ np.array([r[0], r[1], 1.0]))[2]
         self._sign = float(np.sign(wz)) if abs(wz) > _EPS else 0.0
+        if self.ankle_H is not None:
+            wz = (self.ankle_H @ np.array([r[0], r[1], 1.0]))[2]
+            self._ankle_sign = float(np.sign(wz)) if abs(wz) > _EPS else 0.0
 
     def to_rect_many(self, pts):
         """Raw frame pixels (N,2) -> the pixel space H0 expects (N,2)."""
@@ -162,17 +175,21 @@ class FloorProjector:
     def to_rect(self, u, v):
         return self.to_rect_many([(u, v)])[0]
 
-    def rect_to_floor(self, x, y):
+    def rect_to_floor(self, x, y, plane="floor"):
         """(x, y) meters for a pixel already in H0 space, or None past the horizon."""
-        w = self.H0 @ np.array([x, y, 1.0])
-        if abs(w[2]) < _EPS or (self._sign and np.sign(w[2]) != self._sign):
+        if plane not in ("floor", "ankle"):
+            raise ValueError("projection plane must be floor or ankle")
+        ankle = plane == "ankle" and self.ankle_H is not None
+        H, sign = (self.ankle_H, self._ankle_sign) if ankle else (self.H0, self._sign)
+        w = H @ np.array([x, y, 1.0])
+        if abs(w[2]) < _EPS or (sign and np.sign(w[2]) != sign):
             return None
         return float(w[0] / w[2]), float(w[1] / w[2])
 
-    def to_floor(self, u, v):
+    def to_floor(self, u, v, plane="floor"):
         """(x, y) meters for a raw frame pixel, or None if on/above the horizon."""
         r = self.to_rect(u, v)
-        return self.rect_to_floor(r[0], r[1])
+        return self.rect_to_floor(r[0], r[1], plane=plane)
 
     def rectify_bbox(self, bbox):
         """A raw (x1, y1, x2, y2) box expressed in H0's pixel space."""

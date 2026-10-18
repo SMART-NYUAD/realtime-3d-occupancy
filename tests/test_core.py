@@ -96,9 +96,10 @@ def test_short_box_reaches_nearer(Hs):
 
 # --- end-to-end fusion on real geometry -------------------------------------
 
-def _frame():
+def _frame(homographies=None):
     """Pick a floor point both cameras see at a moderate (recoverable) distance."""
-    Hi = {n: np.linalg.inv(Hs[n]) for n in CAMS}
+    hs = Hs if homographies is None else homographies
+    Hi = {n: np.linalg.inv(hs[n]) for n in CAMS}
 
     def w2p(n, F):
         p = Hi[n] @ np.array([F[0], F[1], 1.0]); return p[:2] / p[2]
@@ -110,13 +111,14 @@ def _frame():
     return None, w2p
 
 
-def _det(n, F, w2p, occl=0):
+def _det(n, F, w2p, occl=0, homographies=None):
+    hs = Hs if homographies is None else homographies
     u, v = w2p(n, F)
     y2 = v - occl
     box = (u - 45, v - 300, u + 45, y2)
-    p = Hs[n] @ np.array([u, y2, 1.0])
+    p = hs[n] @ np.array([u, y2, 1.0])
     return {"cam": n, "id": 1, "world": tuple(p[:2] / p[2]),
-            "floor_poly": bbox_floor_polygon(Hs[n], box, (W, H_IMG))}
+            "floor_poly": bbox_floor_polygon(hs[n], box, (W, H_IMG))}
 
 
 def _fuse(dets, blob):
@@ -145,12 +147,25 @@ def _mean_err(out, F):
     return min(np.linalg.norm(np.array(g["world"]) - F) for g in out)
 
 
-def test_occlusion_fix(F, w2p):
+def test_occlusion_fix():
+    # Frozen geometry of the original regression case. User recalibration changes
+    # which pixel occlusions can produce a recoverable split; it must not change
+    # the behavior exercised by this test. Other geometry tests use current files.
+    fixture = {
+        "yi01": np.array([[-.02599207982594202, .008225128636543065, 44.92878159535796],
+                           [-.014730922657028451, .10865677985618173, -13.419023528855476],
+                           [-.0002499140126597649, .009082563836858515, 1.]]),
+        "yi04": np.array([[-.005946569444606043, .0019795378394439076, -15.666283978490227],
+                           [.017083802789805754, -.018688614696023353, -21.948546484421836],
+                           [-.0003611658990281428, -.00702127121386659, 1.]])}
+    F, w2p = _frame(fixture)
+    assert F is not None
     # yi04 can't see the feet. Grow the occlusion until its foot point drifts far
     # enough to actually hurt plain point fusion (split or biased), then check the
     # blob recovers a single, accurate track.
     for occl in (120, 150, 180, 210, 240):
-        dets = [_det("yi01", F, w2p), _det("yi04", F, w2p, occl=occl)]
+        dets = [_det("yi01", F, w2p, homographies=fixture),
+                _det("yi04", F, w2p, occl=occl, homographies=fixture)]
         drift = np.linalg.norm(np.subtract(dets[0]["world"], dets[1]["world"]))
         old, new = _fuse(dets, False), _fuse(dets, True)
         if len(new) == 1 and (len(old) > 1 or _mean_err(old, F) > 0.3):
@@ -522,6 +537,7 @@ if __name__ == "__main__":
     test_lens_blob_contains_foot()
     test_charuco_board_detect()
     test_solve_intrinsics_synthetic()
+    test_occlusion_fix()
     Hs = _load()
     if Hs is not None:
         test_projector_rescale_and_horizon(Hs)
@@ -532,6 +548,5 @@ if __name__ == "__main__":
             print("SKIP fusion tests: no shared floor point found")
         else:
             test_clean_unbiased(F, w2p)
-            test_occlusion_fix(F, w2p)
             test_no_over_merge(F, w2p)
     print("\nAll tests passed.")

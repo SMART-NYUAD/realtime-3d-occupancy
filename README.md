@@ -198,6 +198,17 @@ python tools/topdown.py --mode height --show  # colour by height
 
 ## Calibration
 
+For a shared camera-rig calibration, use `autocalib.py record → solve → anchor →
+validate → export`. It records one person's walk with upright pauses, jointly
+solves camera poses, and anchors all cameras to the map together. It exports a
+separate candidate configuration after an independent validation walk passes.
+See [the workflow and testing instructions](docs/AUTOCALIBRATION_PLAN.md).
+The default calibration in `calib/` now comes from this process (October 2026):
+on an independent validation walk, cameras placed the same person a median of
+7.6 cm apart (95% within 25 cm), against 37.7 cm (71 cm) for the previous manual
+calibration. It was anchored to the existing map placement, so absolute accuracy
+has not been measured independently. Records are in `calib/autocalib/`.
+
 Calibration has two parts:
 
 - **Lens** (once per camera, ever): the focal length and barrel distortion of the
@@ -717,6 +728,8 @@ people_tracker_3d/
 | `python tools/charuco_board.py` | Write the printable lens-calibration board (A3 PDF) |
 | `python tools/calib_intrinsics.py record\|solve\|view --camera <name>` | Lens calibration per camera |
 | `python tests/test_core.py` | Run geometry, lens, fusion, tracker-glue and privacy tests |
+| `python autocalib.py --help` | Walk recording, joint solve, shared anchoring, validation and export |
+| `python -m unittest discover -s tests -p 'test_autocalib.py' -v` | CPU-only synthetic rig and calibration workflow tests |
 
 ---
 
@@ -783,8 +796,8 @@ It still runs through the detector but contributes no floor positions.
 ## Roadmap & further docs
 
 - [`docs/REVIEW.md`](docs/REVIEW.md) — full code review: bugs found and fixed,
-  open issues, and the calibration roadmap (lens distortion is the biggest
-  remaining error source).
+  open issues, and the calibration roadmap (historical lens status predates
+  the saved camera calibrations).
 - [`docs/AUTOCALIBRATION_PLAN.md`](docs/AUTOCALIBRATION_PLAN.md) — plan for
   **automatic multi-camera calibration**.
 
