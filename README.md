@@ -363,11 +363,13 @@ Every second the console prints a status line and a sync-health line:
 |-------|---------|
 | `FPS` | processed loop steps per second |
 | `detect` / `draw` | ms per step in detection+localization / rendering |
-| `P<id>(x,y)` | global track ID and its position in meters |
+| `P<id>(x,y)` | global track ID and its position in meters; `P3s` = sitting, `P5t` = standing |
 | `spread` | capture-time spread across cameras in the aligned set (lower is better) |
 | `lag` | how far each camera trails real time |
 | `ntp=a/b` | frames with a valid NTP timestamp / total |
 | `rc=N` · `STUCK` | watchdog reconnects so far · camera currently wedged |
+
+On the floor map, green = seen now, gray = briefly unseen, **blue with a ring** = seated and settled (held for up to 2 minutes when hidden); a ring alone marks a sitting person.
 
 ---
 
@@ -402,11 +404,17 @@ Positions are published as TAC-B-style `position` messages. `X` / `Y` are in
       "X": [582.1, 578.4, 574.9],
       "Y": [101.3, 102.0, 102.6],
       "speed": 0.41,
-      "object_type": "pedestrian"
+      "object_type": "pedestrian",
+      "posture": "sitting"
     }
   }
 }
 ```
+
+`posture` is `sitting`, `standing` or `unknown` (from the measured shoulder height
+when two cameras see the person, else from the body pose). Only people seen within
+`fusion.publish_coast_s` (0.5 s) are sent, plus seated people who are briefly hidden
+("settled", held up to `fusion.settled_max_age_s`).
 
 The client reconnects automatically (1–30 s back-off) and clears its speed
 history on reconnect, so there's no bogus speed spike after an outage.
@@ -431,6 +439,8 @@ tracker thresholds in [`bytetrack.yaml`](bytetrack.yaml).
 | `half` | `true` | FP16 for `.pt` weights (engine precision is fixed at export) |
 | `max_batch` | `4` | All cameras run as one batch (must match the engine) |
 | `kp_conf` | `0.5` | Min keypoint visibility to trust an ankle/hip/etc. |
+| `suppress_nested` / `nested_overlap` | `true` / `0.75` | Drop a box mostly inside a stronger one (or sharing its shoulders) before tracking: one person, one box |
+| `ignore_zones` (per camera) | none | Raw-pixel polygons whose detections are not tracked (e.g. a monitor detected as a person); still privacy-masked |
 
 </details>
 
@@ -476,23 +486,52 @@ tracker thresholds in [`bytetrack.yaml`](bytetrack.yaml).
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `merge_distance_m` | `1.6` | Detections this close across cameras = same person |
+| `merge_distance_m` | `1.0` | Detections this close across cameras = same person (when shoulder lines of sight can't decide) |
 | `match_gate_m` | `1.8` | Max movement between frames to keep an ID |
 | `max_age_s` | `1.5` | Keep an unseen track this long (occlusion) |
 | `smoothing` | `0.35` | Position EMA (higher = snappier) |
 | `blob_min_sigma_m` | `0.15` | Use blob intersection only when fused σ exceeds this |
 | `conf_drop_ratio` | `0.5` | Drop members below this fraction of the cluster's best confidence |
-| `n_init` | `3` | Frames a new track must survive before it's shown |
+| `confirm_s` | `0.3` | Seconds a new track must be seen before it's shown (`0` = use `n_init` frames) |
+| `n_init` | `3` | Frames a new track must survive (only when `confirm_s: 0`) |
 | `max_age_tentative_s` | `0.4` | Unconfirmed tracks age out this fast |
-| `dup_suppress_m` | `1.0` | No new track within this distance of an existing one |
+| `dup_suppress_m` | `0.7` | No new track within this distance of an existing one |
 | `max_speed_mps` | `2.5` | Speed cap (a bad frame can't drag a marker across the room) |
 | `use_blob` | `true` | Ground-plane blob intersection |
 | `blob_far_frac` / `blob_near_frac` | `0.1` / `1.4` | Trapezoid reach past / toward the camera (× box height) |
 | `blob_clip_inflate` | `2.5` | Reach for boxes clipped at the frame bottom |
 | `blob_body_aspect` | `3.0` | Expected h:w of a standing body |
 | `blob_short_aspect` | `1.8` | Below this h:w the box is torso-only |
-| `blob_merge_gate_m` | `3.0` | Looser merge gate for overlapping trapezoids |
+| `blob_merge_gate_m` | `1.5` | Looser merge gate for overlapping trapezoids |
+| `blob_only_fallback` | `true` | Trapezoids only refine clusters made of feet guesses, never ankle/shoulder/measured positions |
+| `identity_matching` / `identity_gate_m` | `true` / `3.0` | Follow each camera's tracker IDs (3 s majority) through position jumps; IDs owned by different people are never merged |
+| `triangulate` | `true` | Locate shoulders where two cameras' lines of sight cross; measures shoulder height (posture) |
+| `tri_max_gap_m` / `tri_min_angle_deg` | `0.25` / `25` | Max miss distance of two lines of sight; shallower viewing angles decide nothing |
+| `sitting_shoulder_max_m` | `1.20` | Measured shoulder height below this = sitting |
+| `seated_persistence` / `settled_max_age_s` | `true` / `120` | Seated people sitting still are "settled" and held this long when hidden |
+| `settled_gate_m` / `standup_gate_m` | `0.6` / `0.35` | Observations a settled track accepts (standing ones only at the chair) |
+| `settled_smoothing`, `settle_window_s`, `deadband_m`, `deadband_s` | `true`, `3.0`, `0.3`, `1.0` | Settled dot = median of the last 3 s; moves only after > 0.3 m for > 1 s |
+| `settle_speed_mps` | `0.2` | Slower than this over the window counts as still |
+| `publish_coast_s` | `0.5` | Unseen people stop being published after this (settled ones excepted) |
 | `show_raw_dots` / `show_blobs` | `true` / `false` | Debug drawing |
+
+</details>
+
+<details>
+<summary><b><code>localize</code> — people whose ankles are hidden</b></summary>
+
+With a lens-corrected calibration each camera's 3D pose is known (decomposed from
+its floor homography), so when the ankles are hidden the tracker follows the line of
+sight to the **shoulders** down to the person's shoulder height instead of guessing
+the feet with standing proportions.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `torso_estimates` | `true` | `false` = old foot guesses only |
+| `seated_use_torso` | `true` | Seated people always use the torso (their feet are ahead of the chair) |
+| `standing_shoulder_m` / `seated_shoulder_m` | `1.40` / `1.05` | Typical shoulder heights until a measured one is available |
+| `unknown_shoulder_m` | `1.22` | Posture unknown: in between, with a large uncertainty |
+| `head_above_shoulder_m` | `0.22` | Head keypoints used when the shoulders aren't visible |
 
 </details>
 
@@ -664,10 +703,12 @@ the CPU and capped the whole tracker at ~4 FPS.
 |---|---|
 | Floor (X, Y) with visible feet on a flat floor | Solid |
 | Feet occluded in one camera, visible in another | Recovered by fusion + blob intersection |
-| Feet occluded in **all** cameras | Extrapolated from pose, flagged uncertain |
+| Feet occluded in **all** cameras (seated at a desk, standing behind furniture) | Located from the shoulders: measured where two cameras' lines of sight cross, else at a typical shoulder height |
+| Seated people briefly undetected | Held for up to 2 minutes while settled; position steady (median with dead-band) |
+| Two people along the line between two facing cameras, legs hidden | Geometry can't separate their depth; told apart by each camera's tracker IDs over time |
 | Heavy occlusion near the horizon | Few pixels → many meters; can still split beyond `blob_merge_gate_m` |
 | Lens distortion | Corrected once a camera has an `intrinsics_file` (Calibration → Step 0); uncorrected cameras still lose accuracy toward the image edges |
-| Height / Z | Not measured |
+| Height / posture | Shoulder height measured when two cameras see the shoulders; sitting / standing published over MQTT |
 
 ---
 
@@ -730,6 +771,9 @@ people_tracker_3d/
 | `python tests/test_core.py` | Run geometry, lens, fusion, tracker-glue and privacy tests |
 | `python autocalib.py --help` | Walk recording, joint solve, shared anchoring, validation and export |
 | `python -m unittest discover -s tests -p 'test_autocalib.py' -v` | CPU-only synthetic rig and calibration workflow tests |
+| `python -m unittest tests/test_tracking.py -v` | Simulated-lab tracking tests: seated / hidden-ankle people, double dots, IDs, posture |
+| `python tools/tracking_metrics.py log.csv --expected N` | Tracking quality from a `track.py --log-csv` log (duplicates, ID births, seated jitter, continuity) |
+| `python tools/replay_tracking.py SESSION --out new.csv [--legacy]` | Replay a recorded session offline with the fixes on (or `--legacy` off) |
 
 ---
 
@@ -742,7 +786,23 @@ people_tracker_3d/
    Make sure the cameras are NTP clients of the Jetson and `sync.enabled: true`.
 2. Look at `recalibrate.py` — if two cameras' dots for you are > 0.7 m apart,
    the calibrations disagree. Add shared reference points in the overlap.
-3. Turn on `fusion.show_blobs: true` to see whether the trapezoids overlap.
+3. If the extra dot follows one person everywhere, check the camera windows for
+   two boxes on that person (`detector.suppress_nested` should remove these).
+4. Log a session with `--log-csv` and run `tools/tracking_metrics.py` on it: the
+   `duplicate_dot_frames_pct` and `id_births_per_min` lines show how often it happens.
+
+</details>
+
+<details>
+<summary><b>A seated person disappears or their dot wanders</b></summary>
+
+1. Check the floor map: a seated, settled person is drawn **blue with a ring**. If
+   they never turn blue, the posture isn't detected: make sure at least two cameras
+   see their shoulders (needed to measure posture), or that their body pose is visible.
+2. A monitor or person in front can hide them completely; settled people are held for
+   `fusion.settled_max_age_s` (120 s). Raise it if people often sit fully hidden.
+3. A static object detected as a person can be excluded per camera with
+   `ignore_zones` (see the `detector` configuration).
 
 </details>
 

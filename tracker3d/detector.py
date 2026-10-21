@@ -66,6 +66,51 @@ class _ByteTracker(BYTETracker):
         return tracks
 
 
+def tracker_input_mask(xyxy, conf, kxy=None, kcf=None, zones=(), nested_overlap=0.75,
+                       kp_conf=0.5):
+    """Boolean mask of detections to pass to the tracker.
+
+    Drops (1) a box whose centre lies in an ignore zone (a camera-pixel polygon,
+    e.g. over a monitor or poster that keeps being detected as a person), and
+    (2) a duplicate of a stronger box: mostly inside it (a torso box within a full
+    body box survives NMS at IoU 0.5) or with both shoulders on the same spot.
+    A duplicate would otherwise become a second, permanent dot for one person."""
+    import cv2
+    n = len(conf)
+    keep = np.ones(n, bool)
+    for i in range(n):
+        cx, cy = (xyxy[i, 0] + xyxy[i, 2]) / 2, (xyxy[i, 1] + xyxy[i, 3]) / 2
+        if any(cv2.pointPolygonTest(z, (float(cx), float(cy)), False) >= 0 for z in zones):
+            keep[i] = False
+    if nested_overlap <= 0:
+        return keep
+    order = np.argsort(-np.asarray(conf))
+    kept = []
+    for i in order:
+        if not keep[i]:
+            continue
+        x1, y1, x2, y2 = xyxy[i]
+        area = max((x2 - x1) * (y2 - y1), 1e-6)
+        dup = False
+        for j in kept:
+            ix = max(0.0, min(x2, xyxy[j, 2]) - max(x1, xyxy[j, 0]))
+            iy = max(0.0, min(y2, xyxy[j, 3]) - max(y1, xyxy[j, 1]))
+            if ix * iy / area >= nested_overlap:
+                dup = True
+            elif kxy is not None and kcf is not None and min(kcf[i][5:7]) >= kp_conf \
+                    and min(kcf[j][5:7]) >= kp_conf:
+                tol = 0.15 * max(y2 - y1, 1.0)
+                if np.all(np.linalg.norm(kxy[i][5:7] - kxy[j][5:7], axis=1) < tol):
+                    dup = True
+            if dup:
+                break
+        if dup:
+            keep[i] = False
+        else:
+            kept.append(i)
+    return keep
+
+
 class MultiCamDetector:
     def __init__(self, cfg, cam_names):
         d = cfg["detector"]
@@ -79,6 +124,11 @@ class MultiCamDetector:
         self.max_batch = int(d.get("max_batch", 4))
         targs = IterableSimpleNamespace(**YAML.load(d.get("tracker", "bytetrack.yaml")))
         self.trackers = {n: _ByteTracker(targs) for n in cam_names}
+        self.suppress_nested = bool(d.get("suppress_nested", True))
+        self.nested_overlap = float(d.get("nested_overlap", 0.75))
+        self.kp_conf = float(d.get("kp_conf", 0.5))
+        self.zones = {c["name"]: [np.asarray(z, np.float32) for z in c.get("ignore_zones", [])]
+                      for c in cfg.get("cameras", [])}
 
     def warmup(self, shape=(1080, 1920, 3), n=3):
         dummy = [np.zeros(shape, np.uint8)] * max(1, min(n, self.max_batch))
@@ -121,7 +171,11 @@ class MultiCamDetector:
                     d["kxy"], d["kconf"] = kxy[i], kcf[i]
                 raw.append(d)
 
-            tracks = self.trackers[n].update(_Dets(xyxy, conf))
+            # The tracker sees only kept boxes; `raw` (privacy masking) keeps all.
+            keep = tracker_input_mask(xyxy, conf, kxy, kcf, self.zones.get(n, ()),
+                                      self.nested_overlap if self.suppress_nested else 0.0,
+                                      self.kp_conf)
+            tracks = self.trackers[n].update(_Dets(xyxy[keep], conf[keep], np.flatnonzero(keep)))
             people = []
             for row in tracks:
                 idx = int(row[-1])

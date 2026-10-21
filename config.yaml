@@ -59,6 +59,28 @@ detector:
   kp_conf: 0.5           # min per-keypoint visibility to trust an ankle/hip/etc.
                          # (pose models only). Higher = fall back to extrapolation
                          # sooner; lower = trust marginal keypoints.
+  # Duplicate boxes for one person (e.g. a torso box inside the full-body box,
+  # which survives NMS) would become a second dot. Before tracking, drop a box
+  # that lies this fraction inside a stronger box, or whose shoulders sit on the
+  # stronger box's shoulders. Privacy masking still covers every box.
+  suppress_nested: true
+  nested_overlap: 0.75
+  # Per camera (in `cameras:` above) you can add image regions to ignore, e.g. a
+  # monitor or poster that keeps being detected as a person (raw pixel polygons):
+  #   ignore_zones: [[[1500, 200], [1700, 200], [1700, 400], [1500, 400]]]
+
+# Locating a person whose ankles are hidden (desks, chairs, frame edge). With a
+# lens-corrected calibration each camera's 3D pose is known, so the shoulders'
+# line of sight is followed down to the person's shoulder height instead of
+# guessing the feet with standing proportions. Heights are typical adult values;
+# once two cameras see someone, their measured shoulder height is used instead.
+localize:
+  torso_estimates: true     # false = old foot guesses only
+  seated_use_torso: true    # seated people: always the torso (feet are ahead of the chair)
+  standing_shoulder_m: 1.40
+  seated_shoulder_m: 1.05
+  unknown_shoulder_m: 1.22  # posture unknown: in between, with a large uncertainty
+  head_above_shoulder_m: 0.22
 
 floorplan:
   # The top-down map = the shared world frame (meters, origin at the scan's
@@ -120,7 +142,9 @@ sync:
 
 fusion:
   enabled: true
-  merge_distance_m: 1.6   # detections this close (across cameras) = same person
+  # Cross-camera merge distance. Was 1.6 m to absorb the old calibration's errors;
+  # with cameras agreeing to ~8 cm, 1.0 m keeps neighbours at adjacent desks apart.
+  merge_distance_m: 1.0   # detections this close (across cameras) = same person
   match_gate_m: 1.8       # max a person can move between frames to keep its ID
   max_age_s: 1.5          # keep a global track this long while unseen (occlusion)
   smoothing: 0.35          # position EMA: higher = snappier, lower = smoother
@@ -142,8 +166,10 @@ fusion:
   conf_drop_ratio: 0.5
 
   # --- track lifecycle gates (kill duplicate dots and single-frame drags) ---
-  # A new global track must be matched this many frames before it's shown. Flicker
-  # from a briefly-occluded/ghost detection never survives long enough to appear.
+  # A new global track must be seen for confirm_s seconds before it's shown (time,
+  # not frames, so it doesn't depend on the frame rate). confirm_s: 0 falls back to
+  # n_init frames.
+  confirm_s: 0.3
   n_init: 3
   # Unconfirmed (still-tentative) tracks age out this fast, so ghosts vanish
   # quickly instead of lingering for the full max_age.
@@ -151,11 +177,38 @@ fusion:
   # Don't BIRTH a new track within this distance of an existing one -- that's
   # almost always the same person localized a second way (a duplicate dot), not a
   # new person. Keep below the spacing of distinct people. 0 disables.
-  dup_suppress_m: 1.0
+  dup_suppress_m: 0.7
   # A person can't teleport: cap how far a marker may move per second. A single
   # drifted (occluded) observation then only nudges the dot and it recovers next
   # frame, instead of being dragged across the room. 0 disables.
   max_speed_mps: 2.5
+
+  # Follow each camera's own person IDs: when a person's floor estimate jumps,
+  # the track that owned the same per-camera IDs keeps them (no new ID and no
+  # gray "ghost" left behind), up to identity_gate_m away.
+  identity_matching: true
+  identity_gate_m: 3.0
+  # Two or more cameras seeing the shoulders: locate them where the lines of sight
+  # cross (missing each other by at most tri_max_gap_m). This also measures the
+  # shoulder height, which decides posture (below sitting_shoulder_max_m = sitting).
+  triangulate: true
+  tri_max_gap_m: 0.25
+  sitting_shoulder_max_m: 1.20
+  # Seated people who sit still become "settled": their dot is the median of the
+  # last settle_window_s seconds and only moves when they really move (more than
+  # deadband_m for deadband_s), and they stay on the map for settled_max_age_s
+  # when hidden (e.g. behind a monitor). A settled track only accepts observations
+  # within settled_gate_m, so someone walking past can't take it over.
+  seated_persistence: true
+  settled_max_age_s: 120
+  settled_gate_m: 0.6
+  settled_smoothing: true
+  settle_speed_mps: 0.2
+  settle_window_s: 3.0
+  deadband_m: 0.3
+  deadband_s: 1.0
+  # Publish to the twin only people seen within this many seconds, or settled.
+  publish_coast_s: 0.5
 
   # Ground-plane blob intersection. Instead of fusing each camera's single foot
   # point, project each detection's bbox to a floor *trapezoid* of foot-point
@@ -184,7 +237,11 @@ fusion:
   # (merge_distance_m), so its *trapezoid* overlap is allowed to merge it instead,
   # up to this looser gate. This is what actually stops the "two dots for one
   # person" split. Keep below the spacing of distinct people to avoid over-merging.
-  blob_merge_gate_m: 3.0
+  blob_merge_gate_m: 1.5
+  # The trapezoid refines a position only when every camera had to fall back to a
+  # feet guess (knees / hips / box), never over ankle, shoulder or measured
+  # positions. false = old behaviour.
+  blob_only_fallback: true
   show_blobs: false       # draw the trapezoids + their intersection on the map (debug)
 
 output:

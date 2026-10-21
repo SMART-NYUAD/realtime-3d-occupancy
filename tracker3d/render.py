@@ -101,8 +101,16 @@ def draw_map(plan, people_now, all_dets, colors, fused, show_raw, show_blobs, bl
     if fused:
         for g in people_now:
             px, py = plan.world_to_px(*g["world"])
-            col = (160, 160, 160) if g["coasting"] else (60, 220, 60)
+            if g.get("settled"):
+                col = (230, 160, 40)            # blue: seated and settled (held when hidden)
+            elif g["coasting"]:
+                col = (160, 160, 160)           # gray: not seen this frame
+            else:
+                col = (60, 220, 60)
             cv2.circle(canvas, (px, py), 8, col, -1, cv2.LINE_AA)
-            tag = f"P{g['gid']}" + ("" if g["coasting"] else f" [{','.join(g['cams'])}]")
-            cv2.putText(canvas, tag, (px + 10, py), cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1)
+            if g.get("posture") == "sitting":
+                cv2.circle(canvas, (px, py), 11, col, 2, cv2.LINE_AA)   # ring = sitting
+            label = {"sitting": " sit", "standing": " stand"}.get(g.get("posture"), "")
+            tag = f"P{g['gid']}{label}" + ("" if g["coasting"] else f" [{','.join(g['cams'])}]")
+            cv2.putText(canvas, tag, (px + 12, py), cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1)
     return canvas
