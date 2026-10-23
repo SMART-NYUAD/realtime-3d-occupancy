@@ -22,6 +22,7 @@ topdown.png
 # Headless snapshots
 floor_map.png
 cameras.png
+coverage_plan/
 
 # YOLO / detector weights (large; auto-downloaded or built locally)
 *.pt

@@ -222,6 +222,32 @@ def load_plan(cfg):
     return plan
 
 
+def load_scan_points(cfg):
+    """The lab scan as (N, 3) points in the world frame: x, y in map meters and z =
+    height above the floor. Uses the same axis choice, flips and footprint clipping
+    as PointCloudPlan._build, so the points line up with the map and calibrations.
+    The floor is the most populated 2 cm height slab in the lowest 10% of points."""
+    import laspy
+    fpc = cfg["floorplan"]
+    las = laspy.read(fpc.get("pointcloud_file", "data/smart_lab.las"))
+    pts = np.vstack([las.x, las.y, las.z]).T.astype(np.float64)
+    up_cfg = str(fpc.get("up_axis", "auto")).lower()
+    up = PointCloudPlan._detect_up_axis(pts) if up_cfg == "auto" else _AXIS[up_cfg]
+    fa, fb = [a for a in (0, 1, 2) if a != up]
+    fx, fy, h = pts[:, fa].copy(), pts[:, fb].copy(), pts[:, up]
+    if fpc.get("flip_x", False):
+        fx = -fx
+    if fpc.get("flip_y", False):
+        fy = -fy
+    c = float(fpc.get("clip_percentile", 0.2))
+    xlo = np.percentile(fx, c)
+    ylo = np.percentile(fy, c)
+    low = h[h <= np.percentile(h, 10)]
+    hist, edges = np.histogram(low, bins=np.arange(low.min(), low.max() + 0.02, 0.02))
+    floor = edges[int(np.argmax(hist))] + 0.01
+    return np.column_stack([fx - xlo, fy - ylo, h - floor])
+
+
 def _configure_valid_area(plan, fpc):
     """Attach the usable-floor gate: 'auto' (from the rendered scan), an explicit
     polygon [[x, y], ...], or [] / null to disable."""
