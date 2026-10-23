@@ -21,7 +21,7 @@ import cv2
 
 from tracker3d.config import load_config, load_env, list_cameras
 from tracker3d.detector import MultiCamDetector
-from tracker3d.fusion import Fusion
+from tracker3d.fusion import Fusion, publishable
 from tracker3d.geometry import FloorProjector
 from tracker3d.lens import load_lens
 from tracker3d.localize import Localizer
@@ -52,15 +52,20 @@ def load_projectors(cams):
     return projs
 
 
+_POSTURE_TAG = {"sitting": "s", "standing": "t"}   # console: P3s = sitting, P5t = standing
+
+
 class PositionLog:
     """Optional CSV of every per-camera and fused position (for before/after
     accuracy checks, e.g. walking a straight tape line). One row per position:
-    t, kind (det|track), cam, id, x, y, foot_source."""
+    t, kind (det|track), cam, id, x, y, foot_source, posture, settled, sigma_m,
+    last_seen_s. tools/tracking_metrics.py summarises a log."""
 
     def __init__(self, path):
         self.f = open(path, "w", newline="")
         self.w = csv.writer(self.f)
-        self.w.writerow(["t", "kind", "cam", "id", "x", "y", "foot_source"])
+        self.w.writerow(["t", "kind", "cam", "id", "x", "y", "foot_source",
+                         "posture", "settled", "sigma_m", "last_seen_s"])
         self._flush_t = time.time()
 
     def write(self, t, dets, tracks):
@@ -68,11 +73,14 @@ class PositionLog:
             if d.get("world") is not None:
                 self.w.writerow([f"{t:.3f}", "det", d["cam"], d["id"],
                                  f"{d['world'][0]:.3f}", f"{d['world'][1]:.3f}",
-                                 d.get("foot_source", "")])
+                                 d.get("foot_source", ""), d.get("posture_2d", ""), "",
+                                 f"{d.get('foot_sigma_m') or 0:.3f}", ""])
         for g in tracks:
             self.w.writerow([f"{t:.3f}", "track", "+".join(g.get("cams", [])),
                              g.get("gid", ""), f"{g['world'][0]:.3f}",
-                             f"{g['world'][1]:.3f}", "coasting" if g.get("coasting") else ""])
+                             f"{g['world'][1]:.3f}", "coasting" if g.get("coasting") else "",
+                             g.get("posture", ""), int(bool(g.get("settled"))),
+                             f"{g.get('sigma', 0):.3f}", f"{g.get('last_seen_s', 0):.2f}"])
         if time.time() - self._flush_t > 1.0:
             self.f.flush()
             self._flush_t = time.time()
@@ -159,6 +167,7 @@ def main():
     detector.warmup(n=len(names))
     localizer = Localizer(cfg, plan)
     fuser = Fusion.from_config(fcfg) if fcfg.get("enabled", True) else None
+    publish_coast_s = float(fcfg.get("publish_coast_s", 0.5))
     masker = PrivacyMasker(ocfg.get("privacy", {}))
     mqtt_pub = MqttPositionPublisher(ocfg.get("mqtt", {}))
     mqtt_pub.start()
@@ -196,7 +205,8 @@ def main():
                     proj = projs[n]
                     if proj is not None:
                         proj.set_frame_size(w, h)
-                    localizer.localize(n, people, proj, (w, h))
+                    localizer.localize(n, people, proj, (w, h),
+                                       hints=fuser.posture_hints() if fuser is not None else None)
                     cache[n] = (people, raw, frame)
                     last_key[n] = got[n][0]
                 t_det += time.perf_counter() - t0
@@ -207,7 +217,10 @@ def main():
                     blobs = fuser.last_blobs
                 else:
                     people_now = [p for p in all_dets if p["world"] is not None]
-                mqtt_pub.publish_positions(people_now)
+                # The twin gets people seen recently, or seated people briefly
+                # hidden ("settled"); not walkers who vanished a moment ago.
+                mqtt_pub.publish_positions(publishable(people_now, publish_coast_s)
+                                           if fuser is not None else people_now)
                 if poslog is not None and new:
                     poslog.write(t_cap, all_dets, people_now)
                 n_steps += 1 if new else 0
@@ -247,7 +260,8 @@ def main():
                 fps = n_steps / dt
                 det_ms = 1000 * t_det / max(n_steps, 1)
                 draw_ms = 1000 * t_draw / max(n_steps, 1)
-                summary = ", ".join(f"P{g['gid']}({g['world'][0]:.1f},{g['world'][1]:.1f})"
+                summary = ", ".join(f"P{g['gid']}{_POSTURE_TAG.get(g.get('posture'), '')}"
+                                    f"({g['world'][0]:.1f},{g['world'][1]:.1f})"
                                     for g in people_now if "gid" in g)
                 print(f"{fps:5.1f} FPS | detect {det_ms:4.1f} ms | draw {draw_ms:4.1f} ms | "
                       f"{len(people_now)} people {summary}", flush=True)

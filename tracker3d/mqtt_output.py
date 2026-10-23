@@ -120,6 +120,7 @@ class MqttPositionPublisher:
                 "Y": [y for _x, y in trail],
                 "speed": speed,
                 "object_type": "pedestrian",
+                "posture": person.get("posture", "unknown"),   # sitting | standing | unknown
             }
 
         for stale_id in set(self._trails) - active_ids:

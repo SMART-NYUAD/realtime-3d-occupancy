@@ -198,6 +198,49 @@ class FloorProjector:
         b = (x1 * sx, y1 * sy, x2 * sx, y2 * sy)
         return self.lens.rectify_bbox(b) if self.lens is not None else b
 
+    # ---- 3D camera pose (needs a lens) ----------------------------------------
+    def pose(self):
+        """Camera pose in map meters, decomposed from H0 and the lens, or None.
+
+        A floor homography from a calibrated (rectified) camera is
+        inv(H0) = lambda * K_rect @ [r1 r2 t], with r1, r2 the map X/Y axes in camera
+        coordinates. Returns (M, t, C): a camera-space point is M @ X_map + t, and C
+        is the camera centre (x, y, height) in map meters. M may be a reflection when
+        the map frame is mirrored; it is only used to map points and directions."""
+        if self.lens is None:
+            return None
+        if getattr(self, "_pose", None) is not None:
+            return self._pose
+        B = np.linalg.inv(self.lens.K_rect) @ np.linalg.inv(self.H0)
+        lam = 2.0 / (np.linalg.norm(B[:, 0]) + np.linalg.norm(B[:, 1]))
+        r12, t = B[:, :2] * lam, B[:, 2] * lam
+        U, _, Vt = np.linalg.svd(r12, full_matrices=False)   # nearest orthonormal pair
+        r12 = U @ Vt
+        # Visible floor must lie in front of the camera (positive depth).
+        w, h = self.calib_size or self.lens.image_size
+        x, y = project(self.H0, *self.lens.undistort_points([(w / 2.0, h - 1.0)])[0])
+        if (r12 @ [x, y] + t)[2] < 0:
+            r12, t = -r12, -t
+        r3 = np.cross(r12[:, 0], r12[:, 1])
+        M = np.column_stack([r12, r3])
+        C = -np.linalg.solve(M, t)
+        if C[2] < 0:                       # map Z points the other way: camera above floor
+            M = np.column_stack([r12, -r3])
+            C = -np.linalg.solve(M, t)
+        self._pose = (M, t, C)
+        return self._pose
+
+    def ray(self, u, v):
+        """Line of sight (origin, unit direction) in map meters through raw frame
+        pixel (u, v), or None without a lens."""
+        pose = self.pose()
+        if pose is None:
+            return None
+        M, _, C = pose
+        r = self.to_rect(u, v)
+        d = np.linalg.solve(M, np.linalg.inv(self.lens.K_rect) @ np.array([r[0], r[1], 1.0]))
+        return C.copy(), d / np.linalg.norm(d)
+
 
 def foot_point(bbox):
     """Bottom-center of an (x1, y1, x2, y2) bbox = where the feet touch the floor."""
@@ -276,3 +319,67 @@ def foot_from_pose(kxy, kconf, bbox, kp_thresh=0.5):
 
     # 4. Nothing usable -> fall back to the box bottom (very uncertain).
     return ((x1 + x2) / 2.0, y2), 0.5 * box_h, "box"
+
+
+# ---- rays in map space ------------------------------------------------------
+
+def ray_at_height(ray, z):
+    """(x, y) where a line of sight crosses the horizontal plane at height z
+    (meters), or None if it never reaches it in front of the camera."""
+    origin, d = ray
+    if abs(d[2]) < 1e-9:
+        return None
+    s = (z - origin[2]) / d[2]
+    if s <= 0:
+        return None
+    p = origin + s * d
+    return float(p[0]), float(p[1])
+
+
+def closest_point_between_rays(r1, r2):
+    """Midpoint of the shortest segment between two lines of sight, the length of
+    that segment (how badly they miss each other), and whether both closest points
+    lie in front of their cameras. None for (near) parallel rays."""
+    (o1, d1), (o2, d2) = r1, r2
+    w = o1 - o2
+    a, b, c = d1 @ d1, d1 @ d2, d2 @ d2
+    d, e = d1 @ w, d2 @ w
+    den = a * c - b * b
+    if abs(den) < 1e-9:
+        return None
+    s, t = (b * e - c * d) / den, (a * e - b * d) / den
+    p1, p2 = o1 + s * d1, o2 + t * d2
+    return (p1 + p2) / 2.0, float(np.linalg.norm(p1 - p2)), bool(s > 0 and t > 0)
+
+
+# ---- posture from 2D keypoints ----------------------------------------------
+
+def posture_2d(kxy, kconf, kp_thresh=0.5, sit_angle=50.0, stand_angle=30.0,
+               sit_ratio=0.55, stand_ratio=0.75):
+    """'sitting' | 'standing' | 'unknown' from one view's shoulders, hips and knees.
+
+    Standing, the thigh continues the torso's direction; seated, it bends away
+    (large angle) or points at the camera and looks short (small thigh/torso
+    length). A heuristic: measured shoulder height from two cameras overrides it."""
+    kxy = np.asarray(kxy, float)
+    kconf = np.asarray(kconf, float)
+
+    def mid(idxs):
+        pts = [kxy[i] for i in idxs if kconf[i] >= kp_thresh]
+        return np.mean(pts, axis=0) if pts else None
+    sho, hip, knee = mid((_L_SHO, _R_SHO)), mid((_L_HIP, _R_HIP)), mid((_L_KNEE, _R_KNEE))
+    if sho is None or hip is None or knee is None:
+        return "unknown"
+    torso, thigh = hip - sho, knee - hip
+    lt, lh = np.linalg.norm(torso), np.linalg.norm(thigh)
+    if lt < 1e-6:
+        return "unknown"
+    ratio = lh / lt
+    if lh < 1e-6:
+        return "sitting"
+    angle = np.degrees(np.arccos(np.clip(torso @ thigh / (lt * lh), -1, 1)))
+    if angle > sit_angle or ratio < sit_ratio:
+        return "sitting"
+    if angle < stand_angle and ratio > stand_ratio:
+        return "standing"
+    return "unknown"
