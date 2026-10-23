@@ -276,15 +276,41 @@ def wall_yaw(occ, xy, height):
 
 
 class Planner:
-    """Scores the current cameras and searches mounting spots for one more."""
+    """Scores the current cameras and searches mounting spots for one more.
+
+    posture "both" scores every floor spot twice, for a seated and a standing person;
+    arrays then hold the seated spots followed by the standing ones (see split), and
+    areas are the average of the two."""
 
     def __init__(self, cameras, grid, occ, posture="seated", min_angle_deg=25.0,
                  max_range_m=9.0, margin_px=30):
         self.cameras, self.grid, self.occ = cameras, grid, occ
         self.min_angle_deg, self.max_range_m, self.margin_px = min_angle_deg, max_range_m, margin_px
-        self.sh, self.hd = grid.targets(posture)
+        self.postures = list(POSTURES) if posture == "both" else [posture]
+        targets = [grid.targets(p) for p in self.postures]
+        self.sh = np.vstack([sh for sh, _ in targets])
+        self.hd = np.vstack([hd for _, hd in targets])
+        self.xy = np.tile(grid.xy, (len(self.postures), 1))
+        self.cell_area = grid.cell_area / len(self.postures)
         self.seen = np.array([self._visible(c) for c in cameras]).reshape(len(cameras), -1)
-        self.status, self.count = classify(self.seen, [c.C for c in cameras], grid.xy, min_angle_deg)
+        self.status, self.count = classify(self.seen, [c.C for c in cameras], self.xy, min_angle_deg)
+
+    def split(self, values):
+        """{posture: per-floor-spot values} from an array over all scored spots."""
+        n = len(self.grid.xy)
+        return {p: values[k * n:(k + 1) * n] for k, p in enumerate(self.postures)}
+
+    def summaries(self, status=None, count=None):
+        """{posture: summary} (current cameras by default)."""
+        status = self.status if status is None else status
+        count = self.count if count is None else count
+        st, ct = self.split(status), self.split(count)
+        return {p: summary(st[p], ct[p], self.grid.cell_area) for p in self.postures}
+
+    def worst(self, status=None):
+        """Per floor spot, the worst status over the postures (for one map)."""
+        st = self.split(self.status if status is None else status)
+        return np.min(np.vstack(list(st.values())), axis=0)
 
     def _visible(self, cam, clear=None):
         if clear is None:
@@ -296,16 +322,16 @@ class Planner:
         vis = self._visible(cam) if vis is None else vis
         seen = np.vstack([self.seen, vis[None]])
         status, count = classify(seen, [c.C for c in self.cameras] + [cam.C],
-                                 self.grid.xy, self.min_angle_deg)
+                                 self.xy, self.min_angle_deg)
         return status, count, vis
 
     def _fast_status(self, C, vis):
         """classify() for the current cameras plus one, reusing the current pairs."""
         s_min = np.sin(np.radians(self.min_angle_deg))
         good = self.status == GOOD
-        bnew = _bearings(C, self.grid.xy)
+        bnew = _bearings(C, self.xy)
         for c, seen in zip(self.cameras, self.seen):
-            good = good | (vis & seen & (np.abs(np.sin(bnew - _bearings(c.C, self.grid.xy))) >= s_min))
+            good = good | (vis & seen & (np.abs(np.sin(bnew - _bearings(c.C, self.xy))) >= s_min))
         count = self.count + vis
         status = np.where(count == 0, UNSEEN, np.where(count == 1, SINGLE, POOR))
         status[good] = GOOD
@@ -364,7 +390,7 @@ class Planner:
         if not vis.any():
             return best
         status = self._fast_status(C, vis)
-        s = score(status, self.grid.cell_area)
+        s = score(status, self.cell_area)
         if best is None or s > best["score"] + 1e-9:
             return {"C": C, "yaw": float(yaw), "tilt": float(tilt), "score": float(s), "clear": clear}
         return best
