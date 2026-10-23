@@ -774,6 +774,7 @@ people_tracker_3d/
 | `python -m unittest tests/test_tracking.py -v` | Simulated-lab tracking tests: seated / hidden-ankle people, double dots, IDs, posture |
 | `python tools/tracking_metrics.py log.csv --expected N` | Tracking quality from a `track.py --log-csv` log (duplicates, ID births, seated jitter, continuity) |
 | `python tools/replay_tracking.py SESSION --out new.csv [--legacy]` | Replay a recorded session offline with the fixes on (or `--legacy` off) |
+| `python tools/simulate_busy_scene.py [--seeds ...] [--miss 0.25]` | Old vs new tracking on a simulated scene (two seated people, one walker); reproduces the report figures |
 
 ---
 
