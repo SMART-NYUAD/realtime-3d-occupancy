@@ -1,13 +1,15 @@
 """Find the best place to mount one more camera, from the lab scan and the current
 camera calibrations.
 
-    python tools/coverage_planner.py                       # seated people, 2.5 m mount
+    python tools/coverage_planner.py                       # seated and standing, 2.5 m mount
     python tools/coverage_planner.py --height 2.4 --top 8
-    python tools/coverage_planner.py --posture standing    # walkways instead of desks
+    python tools/coverage_planner.py --posture seated      # desks only (or: standing)
     python tools/coverage_planner.py --focus 0,4,8,10      # only score this rectangle
     python tools/coverage_planner.py --spot 7.9,5.2 --spot 4,10.2   # only these spots
 
-Every floor spot (25 cm grid) is rated by how the cameras see a person there:
+Every floor spot (25 cm grid) is rated by how the cameras see a person there,
+seated and standing (--posture both, the default, ranks by the average of the two;
+the maps show each spot's worse rating):
   good    two cameras see them from directions at least --min-angle apart, so the
           tracker measures their height and posture and keeps neighbours apart
   poor    two or more cameras, but from nearly the same direction
@@ -24,6 +26,7 @@ and ranked by the floor area that becomes "good". Writes to --out:
   coverage_candidates.png   the ranked mounting spots on today's coverage
   coverage_option_N.png     coverage with option N added
   coverage_plan.json        all numbers
+(--image-format jpg for smaller images). The saved lab results are in docs/coverage/.
 Map coordinates: meters from the scan's bottom-left corner, x to the right, y up,
 as on the tracker's map. The scan is a snapshot: furniture moved since then, or
 glass the scanner saw through, is not known. Check a spot with the live camera view
@@ -146,6 +149,17 @@ def add_legend(img, title):
 
 
 # ---- main ---------------------------------------------------------------------
+def far_side(plan, C, yaw_deg):
+    """Where the camera's facing line (seen from above) leaves the map rectangle."""
+    d = np.array([np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))])
+    ts = []
+    for k, size in ((0, plan.width_m), (1, plan.height_m)):
+        if abs(d[k]) > 1e-9:
+            ts += [(edge - C[k]) / d[k] for edge in (0.0, size)]
+    t = min(v for v in ts if v > 1e-6)
+    return C[:2] + t * d
+
+
 def describe(s, before=None):
     def part(key, label):
         if before is None:
@@ -160,7 +174,8 @@ def main():
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--out", default="coverage_plan", help="output folder")
     ap.add_argument("--height", type=float, default=2.5, help="mounting height (m)")
-    ap.add_argument("--posture", choices=sorted(cov.POSTURES), default="seated")
+    ap.add_argument("--posture", choices=sorted(cov.POSTURES) + ["both"], default="both",
+                    help="score floor spots for a seated person, a standing one, or both")
     ap.add_argument("--cell", type=float, default=0.25, help="floor grid size (m)")
     ap.add_argument("--min-angle", type=float, default=25.0,
                     help="smallest crossing angle of two cameras' lines of sight (deg)")
@@ -172,6 +187,8 @@ def main():
                     help="only score floor inside x1,y1,x2,y2 (repeatable)")
     ap.add_argument("--include-furniture", action="store_true",
                     help="also score floor under desks and cabinets")
+    ap.add_argument("--image-format", choices=("png", "jpg"), default="png",
+                    help="jpg makes much smaller files (e.g. for docs/)")
     ap.add_argument("--lens-from", default=None,
                     help="camera whose lens model the new camera uses (default: the first)")
     args = ap.parse_args()
@@ -193,13 +210,15 @@ def main():
     mirrored = np.linalg.det(cameras[0].R) < 0
 
     planner = cov.Planner(cameras, grid, occ, args.posture, args.min_angle, args.max_range)
-    now = cov.summary(planner.status, planner.count, grid.cell_area)
-    print(f"[coverage] {now['floor_m2']:.1f} m2 of floor scored ({args.posture} people), "
+    who = " and ".join(f"{p} people" for p in planner.postures)
+    now = planner.summaries()
+    print(f"[coverage] {grid.cell_area * len(grid.xy):.1f} m2 of floor scored for {who}, "
           f"cameras {', '.join(c.name for c in cameras)}")
-    print(f"  today: {describe(now)}")
+    for p in planner.postures:
+        print(f"  today, {p}: {describe(now[p])}")
     for c, seen in zip(cameras, planner.seen):
         print(f"    {c.name} at ({c.C[0]:.2f}, {c.C[1]:.2f}, {c.C[2]:.2f}) sees "
-              f"{seen.sum() * grid.cell_area:.1f} m2")
+              f"{seen.sum() * planner.cell_area:.1f} m2")
 
     if args.spot:
         spots = np.array([s + [args.height] if len(s) == 2 else s for s in args.spot])
@@ -214,45 +233,56 @@ def main():
                              mirrored=mirrored, progress=progress)
 
     os.makedirs(args.out, exist_ok=True)
-    cv2.imwrite(os.path.join(args.out, "coverage_current.png"),
-                draw_map(plan, grid, planner.status, cameras, f"Today: {describe(now)}"))
-    report = {"posture": args.posture, "mount_height_m": args.height,
+
+    def save(name, img):
+        path = os.path.join(args.out, f"{name}.{args.image_format}")
+        cv2.imwrite(path, img, [cv2.IMWRITE_JPEG_QUALITY, 88] if args.image_format == "jpg" else [])
+
+    one = planner.postures[0] if len(planner.postures) == 1 else None
+    both_note = "(each spot: worse of seated / standing)"
+    save("coverage_current", draw_map(plan, grid, planner.worst(), cameras,
+                                      f"Today: {describe(now[one])}" if one else f"Today {both_note}"))
+    report = {"postures": planner.postures, "mount_height_m": args.height,
               "min_angle_deg": args.min_angle, "max_range_m": args.max_range,
               "cell_m": args.cell, "cameras": {c.name: [round(v, 3) for v in c.C] for c in cameras},
               "today": now, "options": []}
-    print(f"\nBest places for a new camera ({args.posture} people), best first:")
+    print(f"\nBest places for a new camera ({who}), best first:")
     for k, o in enumerate(options, 1):
         status, count, vis = planner.with_camera(o["camera"])
-        after = cov.summary(status, count, grid.cell_area)
-        overlap = float(np.sum(vis & planner.seen.any(axis=0)) * grid.cell_area)
+        after = planner.summaries(status, count)
+        overlap = float(np.sum(vis & planner.seen.any(axis=0)) * planner.cell_area)
         aim = cov.aim_point(o["C"], o["yaw"], o["tilt"])
         C = o["C"]
         print(f"\n  Option {k}: mount at x={C[0]:.2f}, y={C[1]:.2f}, height {C[2]:.2f} m")
-        aim_txt = f"floor point x={aim[0]:.2f}, y={aim[1]:.2f}" if aim is not None else "the horizon"
-        print(f"    aim the centre of the picture at {aim_txt} (tilt {o['tilt']:.0f} deg down)")
-        print(f"    {describe(after, now)}")
-        print(f"    new camera sees {vis.sum() * grid.cell_area:.1f} m2, "
+        far = far_side(plan, C, o["yaw"]).round(2) + 0.0      # no "-0.00"
+        print(f"    face towards x={far[0]:.2f}, y={far[1]:.2f} on the far side of the room, "
+              f"tilted {o['tilt']:.0f} deg down")
+        if aim is not None and plan.in_valid_area(*aim):
+            print(f"    (the centre of the picture then lands on floor point x={aim[0]:.2f}, y={aim[1]:.2f})")
+        for p in planner.postures:
+            print(f"    {p}: {describe(after[p], now[p])}")
+        print(f"    new camera sees {vis.sum() * planner.cell_area:.1f} m2, "
               f"{overlap:.1f} m2 of it shared with today's cameras")
         if overlap < 2.0:
             print("    WARNING: little overlap with the other cameras; calibration needs some")
         report["options"].append({
             "rank": k, "position_m": [round(v, 2) for v in C], "facing_deg": round(o["yaw"], 1),
             "tilt_down_deg": round(o["tilt"], 1),
+            "face_towards_m": [round(v, 2) for v in far],
             "aim_floor_point_m": None if aim is None else [round(v, 2) for v in aim],
-            "after": after, "good_gain_m2": round(after["good_m2"] - now["good_m2"], 1),
-            "new_camera_sees_m2": round(float(vis.sum() * grid.cell_area), 1),
+            "after": after,
+            "good_gain_m2": {p: round(after[p]["good_m2"] - now[p]["good_m2"], 1) for p in after},
+            "new_camera_sees_m2": round(float(vis.sum() * planner.cell_area), 1),
             "overlap_with_current_m2": round(overlap, 1)})
-        cv2.imwrite(os.path.join(args.out, f"coverage_option_{k}.png"),
-                    draw_map(plan, grid, status, cameras,
-                             f"Option {k}: {describe(after, now)}", new=o["camera"]))
-    cv2.imwrite(os.path.join(args.out, "coverage_candidates.png"),
-                draw_map(plan, grid, planner.status, cameras,
-                         "Numbered: best mounting spots (arrow = facing)",
-                         markers=[(o["C"], o["yaw"]) for o in options]))
+        title = f"Option {k}: {describe(after[one], now[one])}" if one else f"Option {k} added {both_note}"
+        save(f"coverage_option_{k}", draw_map(plan, grid, planner.worst(status), cameras, title,
+                                              new=o["camera"]))
+    save("coverage_candidates", draw_map(plan, grid, planner.worst(), cameras,
+                                         "Numbered: best mounting spots (arrow = facing)",
+                                         markers=[(o["C"], o["yaw"]) for o in options]))
     with open(os.path.join(args.out, "coverage_plan.json"), "w") as f:
         json.dump(report, f, indent=2)
     print(f"\n[coverage] images and coverage_plan.json in {args.out}/ ({time.time() - t0:.0f} s)")
-
 
 if __name__ == "__main__":
     main()

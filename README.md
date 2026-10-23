@@ -339,14 +339,15 @@ time; drag points until your dot lands on your true spot **and** the cameras agr
    and ranks them by how much floor becomes well covered:
 
    ```bash
-   python tools/coverage_planner.py                     # seated people, 2.5 m mount
-   python tools/coverage_planner.py --posture standing  # walkways
+   python tools/coverage_planner.py                     # seated and standing, 2.5 m mount
+   python tools/coverage_planner.py --posture seated    # desks only
    python tools/coverage_planner.py --spot 7.9,8.1      # only check spots you can use
    ```
 
    It writes maps to `coverage_plan/` (today, numbered options, each option added)
-   and prints where to mount each option and the floor point to aim the centre of
-   the picture at. The scan is a snapshot, so check the live view before drilling.
+   and prints where to mount each option, which way to face it and how far to tilt
+   it. The scan is a snapshot, so check the live view before drilling. Results for
+   the current three cameras are in [`docs/coverage/`](docs/coverage/README.md).
 2. **Give the camera the same setup as the others:** RTSP at 1080p on a fixed IP,
    with the Jetson as its NTP server (see [NTP time-alignment](#2-ntp-time-alignment--why-one-person-isnt-two)).
 3. **Lens calibration** (Step 0). It can be done at a desk before mounting.
@@ -784,6 +785,7 @@ people_tracker_3d/
 └── docs/
     ├── REVIEW.md            code review: bugs fixed, open issues, roadmap
     ├── AUTOCALIBRATION_PLAN.md
+    ├── coverage/            camera coverage maps + best places for a 4th camera
     └── diagrams/            README figures (python docs/diagrams/build.py)
 ```
 
@@ -893,6 +895,8 @@ It still runs through the detector but contributes no floor positions.
   the saved camera calibrations).
 - [`docs/AUTOCALIBRATION_PLAN.md`](docs/AUTOCALIBRATION_PLAN.md) — plan for
   **automatic multi-camera calibration**.
+- [`docs/coverage/`](docs/coverage/README.md) — **camera coverage** of the lab and
+  the best places for a fourth camera.
 
 <div align="center">
 <br/>

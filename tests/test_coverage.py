@@ -145,6 +145,21 @@ class TestSearch(unittest.TestCase):
         np.testing.assert_array_equal(planner._fast_status(new.C, vis), status)
 
 
+    def test_both_postures_combine_seated_and_standing(self):
+        occ = cov.Occupancy(room_points())
+        grid = cov.FloorGrid(_Plan(), 0.5)
+        cams = [camera_at([0.25, 0.25, 2.5], [3, 3, 0.8]), camera_at([5.75, 0.25, 2.5], [3, 3, 0.8])]
+        both = cov.Planner(cams, grid, occ, "both")
+        for p in ("seated", "standing"):
+            one = cov.Planner(cams, grid, occ, p)
+            np.testing.assert_array_equal(both.split(both.status)[p], one.status)
+            self.assertEqual(both.summaries()[p], one.summaries()[p])
+        worst = both.worst()
+        st = both.split(both.status)
+        np.testing.assert_array_equal(worst, np.minimum(st["seated"], st["standing"]))
+        self.assertAlmostEqual(both.cell_area, grid.cell_area / 2)
+
+
 LAS = ROOT / "data" / "smart_lab.las"
 
 
