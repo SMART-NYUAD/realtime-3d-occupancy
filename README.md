@@ -331,6 +331,31 @@ time; drag points until your dot lands on your true spot **and** the cameras agr
 | Right-click a point | deletes it |
 | <kbd>S</kbd> / <kbd>R</kbd> / <kbd>Q</kbd> | save / reload from disk / quit |
 
+### Adding a camera
+
+1. **Choose the spot** with the coverage planner. It uses the lab scan and the
+   current calibrations to rate every floor spot (seen by two cameras from a good
+   angle, poor angle, one camera, unseen), then tries mounting spots along the walls
+   and ranks them by how much floor becomes well covered:
+
+   ```bash
+   python tools/coverage_planner.py                     # seated people, 2.5 m mount
+   python tools/coverage_planner.py --posture standing  # walkways
+   python tools/coverage_planner.py --spot 7.9,8.1      # only check spots you can use
+   ```
+
+   It writes maps to `coverage_plan/` (today, numbered options, each option added)
+   and prints where to mount each option and the floor point to aim the centre of
+   the picture at. The scan is a snapshot, so check the live view before drilling.
+2. **Give the camera the same setup as the others:** RTSP at 1080p on a fixed IP,
+   with the Jetson as its NTP server (see [NTP time-alignment](#2-ntp-time-alignment--why-one-person-isnt-two)).
+3. **Lens calibration** (Step 0). It can be done at a desk before mounting.
+4. **Add it to `config.yaml`** (Step 1). `detector.max_batch` must be at least the
+   number of cameras (re-export the engine with `tools/export_engine.py --batch N`
+   if it is not).
+5. **Redo the calibration walk** with all cameras (`autocalib.py`, see above) so
+   the new camera joins the shared calibration.
+
 ---
 
 ## Running the tracker
@@ -737,6 +762,7 @@ people_tracker_3d/
 │   ├── groundblob.py        floor trapezoids + convex intersection
 │   ├── fusion.py            cross-camera merge + global track lifecycle
 │   ├── plan.py              point-cloud → top-down world map
+│   ├── coverage.py          camera coverage + new-camera placement search
 │   ├── privacy.py           head masking from keypoints
 │   ├── render.py            floor map + camera mosaic drawing
 │   └── mqtt_output.py       MQTT position publisher
@@ -746,11 +772,15 @@ people_tracker_3d/
 │   ├── charuco_board.py     printable lens-calibration board (PDF)
 │   ├── calib_intrinsics.py  lens calibration: record / solve / view
 │   ├── check_sync.py        measure live cross-camera skew
+│   ├── coverage_planner.py  rate coverage, rank places for a new camera
+│   ├── tracking_metrics.py  tracking quality from a --log-csv log
+│   ├── replay_tracking.py   replay a recorded session (fixes on / --legacy)
+│   ├── simulate_busy_scene.py  old vs new tracking on a simulated scene
 │   └── topdown.py           render the world map to PNG
 │
 ├── calib/                   <cam>_homography.npy + .json sidecar, <cam>_intrinsics.json
 ├── data/                    smart_lab.las · reference_points.json · gs_lod2.sog
-├── tests/test_core.py       geometry / fusion / tracker-glue / privacy tests
+├── tests/                   test_core · test_tracking · test_autocalib · test_coverage
 └── docs/
     ├── REVIEW.md            code review: bugs fixed, open issues, roadmap
     ├── AUTOCALIBRATION_PLAN.md
@@ -775,6 +805,8 @@ people_tracker_3d/
 | `python tools/tracking_metrics.py log.csv --expected N` | Tracking quality from a `track.py --log-csv` log (duplicates, ID births, seated jitter, continuity) |
 | `python tools/replay_tracking.py SESSION --out new.csv [--legacy]` | Replay a recorded session offline with the fixes on (or `--legacy` off) |
 | `python tools/simulate_busy_scene.py [--seeds ...] [--miss 0.25]` | Old vs new tracking on a simulated scene (two seated people, one walker); reproduces the report figures |
+| `python tools/coverage_planner.py [--posture standing] [--spot x,y]` | Rate camera coverage from the lab scan and rank places for a new camera |
+| `python -m unittest tests/test_coverage.py -v` | Coverage planner tests (visibility, blocking, angles, search, scan alignment) |
 
 ---
 
