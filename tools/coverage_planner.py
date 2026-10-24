@@ -83,7 +83,10 @@ def to_px(plan, x, y):
     return int(px * SCALE), int(py * SCALE)
 
 
-def draw_map(plan, grid, status, cameras, title, new=None, markers=()):
+def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=()):
+    """Coverage map. `cameras` are drawn white; `new` (a camera, or a list of
+    (camera, label)) magenta; `faded` cameras as an outlined dot only (e.g. where a
+    camera that moves is today); `markers` are numbered (position, facing) pairs."""
     bg = cv2.resize(plan.background(), None, fx=SCALE, fy=SCALE, interpolation=cv2.INTER_NEAREST)
     overlay = bg.copy()
     half = grid.cell / 2
@@ -102,10 +105,18 @@ def draw_map(plan, grid, status, cameras, title, new=None, markers=()):
         cv2.line(img, to_px(plan, 0, m), to_px(plan, plan.width_m, m), (200, 200, 200), 1)
         cv2.putText(img, str(m), (to_px(plan, 0, m)[0] - 22, to_px(plan, 0, m)[1] + 4),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (230, 230, 230), 1)
+    for c in faded:
+        p = to_px(plan, *c.C[:2])
+        cv2.circle(img, p, 7, (255, 255, 255), 2)
+        cv2.putText(img, f"{c.name} today", (p[0] + 9, p[1] + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (0, 0, 0), 3)
+        cv2.putText(img, f"{c.name} today", (p[0] + 9, p[1] + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (255, 255, 255), 1)
     for c in cameras:
         draw_camera(img, plan, c, (255, 255, 255), c.name)
     if new is not None:
-        draw_camera(img, plan, new, NEW, "NEW")
+        for cam, label in (new if isinstance(new, list) else [(new, "NEW")]):
+            draw_camera(img, plan, cam, NEW, label)
     for k, (C, yaw) in enumerate(markers, 1):
         p = to_px(plan, *C[:2])
         end = to_px(plan, C[0] + 0.8 * np.cos(np.radians(yaw)), C[1] + 0.8 * np.sin(np.radians(yaw)))
@@ -187,6 +198,8 @@ def main():
                     help="only score floor inside x1,y1,x2,y2 (repeatable)")
     ap.add_argument("--include-furniture", action="store_true",
                     help="also score floor under desks and cabinets")
+    ap.add_argument("--min-tilt", type=float, default=15.0,
+                    help="lowest tilt below level (deg); flatter cameras lose people behind people")
     ap.add_argument("--image-format", choices=("png", "jpg"), default="png",
                     help="jpg makes much smaller files (e.g. for docs/)")
     ap.add_argument("--lens-from", default=None,
@@ -230,7 +243,7 @@ def main():
         if n % 10 == 0 or n == total:
             print(f"  {n}/{total}", end="\r" if n < total else "\n", flush=True)
     options = planner.search(lens_cam.lens, spots, args.height, top=args.top,
-                             mirrored=mirrored, progress=progress)
+                             mirrored=mirrored, progress=progress, min_tilt_deg=args.min_tilt)
 
     os.makedirs(args.out, exist_ok=True)
 

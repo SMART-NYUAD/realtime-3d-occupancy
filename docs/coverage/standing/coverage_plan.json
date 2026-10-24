@@ -108,14 +108,14 @@
         2.5
       ],
       "facing_deg": -165.0,
-      "tilt_down_deg": 12.0,
+      "tilt_down_deg": 15.0,
       "face_towards_m": [
         0.0,
         5.95
       ],
       "aim_floor_point_m": [
-        -3.42,
-        5.03
+        -1.07,
+        5.66
       ],
       "after": {
         "standing": {
@@ -123,15 +123,15 @@
           "good_m2": 43.1,
           "poor_angle_m2": 0.1,
           "single_m2": 7.9,
-          "unseen_m2": 11.8,
+          "unseen_m2": 11.9,
           "three_plus_m2": 37.6
         }
       },
       "good_gain_m2": {
         "standing": 7.3
       },
-      "new_camera_sees_m2": 39.6,
-      "overlap_with_current_m2": 35.7
+      "new_camera_sees_m2": 39.8,
+      "overlap_with_current_m2": 36.0
     }
   ]
 }

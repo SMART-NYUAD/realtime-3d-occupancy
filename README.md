@@ -346,8 +346,10 @@ time; drag points until your dot lands on your true spot **and** the cameras agr
 
    It writes maps to `coverage_plan/` (today, numbered options, each option added)
    and prints where to mount each option, which way to face it and how far to tilt
-   it. The scan is a snapshot, so check the live view before drilling. Results for
-   the current three cameras are in [`docs/coverage/`](docs/coverage/README.md).
+   it. To weigh moving the existing cameras too, `tools/layout_planner.py
+   --variants` finds the best layout of all cameras for each number kept in place.
+   The scan is a snapshot, so check the live view before drilling. Results for the
+   current three cameras are in [`docs/coverage/`](docs/coverage/README.md).
 2. **Give the camera the same setup as the others:** RTSP at 1080p on a fixed IP,
    with the Jetson as its NTP server (see [NTP time-alignment](#2-ntp-time-alignment--why-one-person-isnt-two)).
 3. **Lens calibration** (Step 0). It can be done at a desk before mounting.
@@ -763,7 +765,7 @@ people_tracker_3d/
 │   ├── groundblob.py        floor trapezoids + convex intersection
 │   ├── fusion.py            cross-camera merge + global track lifecycle
 │   ├── plan.py              point-cloud → top-down world map
-│   ├── coverage.py          camera coverage + new-camera placement search
+│   ├── coverage.py          camera coverage + camera placement searches
 │   ├── privacy.py           head masking from keypoints
 │   ├── render.py            floor map + camera mosaic drawing
 │   └── mqtt_output.py       MQTT position publisher
@@ -774,6 +776,7 @@ people_tracker_3d/
 │   ├── calib_intrinsics.py  lens calibration: record / solve / view
 │   ├── check_sync.py        measure live cross-camera skew
 │   ├── coverage_planner.py  rate coverage, rank places for a new camera
+│   ├── layout_planner.py    best positions for the whole camera set
 │   ├── tracking_metrics.py  tracking quality from a --log-csv log
 │   ├── replay_tracking.py   replay a recorded session (fixes on / --legacy)
 │   ├── simulate_busy_scene.py  old vs new tracking on a simulated scene
@@ -785,7 +788,7 @@ people_tracker_3d/
 └── docs/
     ├── REVIEW.md            code review: bugs fixed, open issues, roadmap
     ├── AUTOCALIBRATION_PLAN.md
-    ├── coverage/            camera coverage maps + best places for a 4th camera
+    ├── coverage/            coverage maps, best 4th camera, best 4-camera layouts
     └── diagrams/            README figures (python docs/diagrams/build.py)
 ```
 
@@ -808,6 +811,7 @@ people_tracker_3d/
 | `python tools/replay_tracking.py SESSION --out new.csv [--legacy]` | Replay a recorded session offline with the fixes on (or `--legacy` off) |
 | `python tools/simulate_busy_scene.py [--seeds ...] [--miss 0.25]` | Old vs new tracking on a simulated scene (two seated people, one walker); reproduces the report figures |
 | `python tools/coverage_planner.py [--posture standing] [--spot x,y]` | Rate camera coverage from the lab scan and rank places for a new camera |
+| `python tools/layout_planner.py [--keep yi04] [--variants]` | Best positions for all cameras at once (some kept in place, or none) |
 | `python -m unittest tests/test_coverage.py -v` | Coverage planner tests (visibility, blocking, angles, search, scan alignment) |
 
 ---
@@ -895,8 +899,8 @@ It still runs through the detector but contributes no floor positions.
   the saved camera calibrations).
 - [`docs/AUTOCALIBRATION_PLAN.md`](docs/AUTOCALIBRATION_PLAN.md) — plan for
   **automatic multi-camera calibration**.
-- [`docs/coverage/`](docs/coverage/README.md) — **camera coverage** of the lab and
-  the best places for a fourth camera.
+- [`docs/coverage/`](docs/coverage/README.md) — **camera coverage** of the lab, the
+  best places for a fourth camera, and the best layouts for all four.
 
 <div align="center">
 <br/>

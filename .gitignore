@@ -23,6 +23,7 @@ topdown.png
 floor_map.png
 cameras.png
 coverage_plan/
+coverage_layout/
 
 # YOLO / detector weights (large; auto-downloaded or built locally)
 *.pt
