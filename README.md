@@ -530,7 +530,9 @@ tracker thresholds in [`bytetrack.yaml`](bytetrack.yaml).
 | `blob_short_aspect` | `1.8` | Below this h:w the box is torso-only |
 | `blob_merge_gate_m` | `1.5` | Looser merge gate for overlapping trapezoids |
 | `blob_only_fallback` | `true` | Trapezoids only refine clusters made of feet guesses, never ankle/shoulder/measured positions |
-| `identity_matching` / `identity_gate_m` | `true` / `3.0` | Follow each camera's tracker IDs (3 s majority) through position jumps; IDs owned by different people are never merged |
+| `identity_matching` / `identity_gate_m` | `true` / `3.0` | Follow each camera's tracker IDs (3 s majority) through position jumps; IDs owned by different people are not merged (see `dup_merge_m`) |
+| `dup_merge_m` / `dup_merge_s` / `dup_merge_speed_mps` | `0.5` / `1.0` / `0.4` | One person split into two tracks is merged back: lines of sight cross with estimates within 0.5 m, or the tracks stay within 0.5 m, move together and share no camera for 1 s |
+| `ray_merge_m` | `0.35` | A torso/head estimate at a guessed height joins a confident ankle estimate its line of sight passes this close to |
 | `triangulate` | `true` | Locate shoulders where two cameras' lines of sight cross; measures shoulder height (posture) |
 | `tri_max_gap_m` / `tri_min_angle_deg` | `0.25` / `25` | Max miss distance of two lines of sight; shallower viewing angles decide nothing |
 | `sitting_shoulder_max_m` | `1.20` | Measured shoulder height below this = sitting |

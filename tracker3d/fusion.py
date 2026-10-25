@@ -17,6 +17,12 @@ Per frame:
      and is not born within `dup_suppress_m` of an existing one. Seated people who
      sit still become "settled": their position is a median with a dead-band (it
      does not wander) and they are kept for `settled_max_age_s` when undetected
+  5. a torso / head estimate whose assumed height was wrong still joins when its
+     line of sight passes over a confident ankle estimate (`ray_merge_m`)
+  6. merge duplicates (`dup_merge_m`): when one cluster holds camera IDs owned by
+     two tracks, or two tracks stay close and move together for `dup_merge_s`
+     while no camera sees both, they are one person: the younger track is folded
+     into the older one, camera ID ownership included
 
 New behaviour defaults OFF when constructing Fusion directly (legacy behaviour);
 Fusion.from_config turns it on per config.yaml.
@@ -71,7 +77,9 @@ class Fusion:
                  seated_persistence=False, settled_max_age_s=120.0, settled_gate_m=0.6,
                  standup_gate_m=0.35,
                  settled_smoothing=False, settle_speed_mps=0.2, settle_window_s=3.0,
-                 deadband_m=0.3, deadband_s=1.0, confirm_s=0.0):
+                 deadband_m=0.3, deadband_s=1.0, confirm_s=0.0,
+                 dup_merge_m=0.0, dup_merge_s=1.0, dup_merge_speed_mps=0.4,
+                 ray_merge_m=0.0, shoulder_band_m=(0.9, 1.75)):
         self.merge = float(merge_distance_m)
         self.gate = float(match_gate_m)
         self.max_age = float(max_age_s)
@@ -102,6 +110,12 @@ class Fusion:
         self.deadband = float(deadband_m)
         self.deadband_s = float(deadband_s)
         self.confirm_s = float(confirm_s)
+        self.dup_merge = float(dup_merge_m)
+        self.dup_merge_s = float(dup_merge_s)
+        self.dup_merge_speed = float(dup_merge_speed_mps)
+        self._close_pairs = {}    # (older gid, younger gid) -> [first close t, last close t]
+        self.ray_merge = float(ray_merge_m)
+        self.shoulder_band = tuple(shoulder_band_m)
         self.tracks = {}
         self.next_id = 1
         self.last_blobs = []   # intersection polygons from the last update (viz)
@@ -139,7 +153,11 @@ class Fusion:
                    settle_window_s=f.get("settle_window_s", 3.0),
                    deadband_m=f.get("deadband_m", 0.3),
                    deadband_s=f.get("deadband_s", 1.0),
-                   confirm_s=f.get("confirm_s", 0.3))
+                   confirm_s=f.get("confirm_s", 0.3),
+                   dup_merge_m=f.get("dup_merge_m", 0.5),
+                   dup_merge_s=f.get("dup_merge_s", 1.0),
+                   dup_merge_speed_mps=f.get("dup_merge_speed_mps", 0.4),
+                   ray_merge_m=f.get("ray_merge_m", 0.35))
 
     # ---- clustering -----------------------------------------------------------
     def _ray_relation(self, r1, r2):
@@ -163,12 +181,46 @@ class Fusion:
             return "cross", (p, gap)
         return "miss", None
 
+    def _ray_over(self, guess, xy):
+        """Horizontal distance from floor point xy to the stretch of a guess line of
+        sight between plausible heights (shoulder_band, raised by guess["above"]
+        for a head line of sight)."""
+        (C, d), above = guess["ray"], guess.get("above", 0.0)
+        if d[2] > -1e-6:
+            return np.inf
+        ts = sorted(max((z + above - C[2]) / d[2], 0.0) for z in self.shoulder_band)
+        a, b = C[:2] + ts[0] * d[:2], C[:2] + ts[1] * d[:2]
+        ab = b - a
+        u = 0.0 if not ab.any() else float(np.clip(np.dot(xy - a, ab) / np.dot(ab, ab), 0.0, 1.0))
+        return float(np.linalg.norm(xy - (a + u * ab)))
+
+    def _guess_fits(self, o, member):
+        """A torso / head estimate placed at an assumed height can be far off when
+        the posture guess is wrong (a standing person whose legs are hidden is
+        taken as seated). Its line of sight is still right: it fits a confident
+        ankle estimate it passes over at a plausible height. Returns that distance
+        (m) when within ray_merge_m, else None."""
+        guess = lambda m: m["kind"] in ("torso", "head") and m.get("guess") is not None
+        sure = lambda m: m["kind"] in ("ankle", "ankles") and m["sigma"] <= 0.3
+        if guess(member):
+            anchors = [m for m in o["members"] if sure(m)]
+            if anchors:
+                wts = np.array([1.0 / max(m["sigma"], _SIG_MIN) ** 2 for m in anchors])
+                xy = np.average([m["w"] for m in anchors], axis=0, weights=wts)
+                dist = self._ray_over(member["guess"], xy)
+                return dist if dist <= self.ray_merge else None
+        elif sure(member) and all(guess(m) for m in o["members"]):
+            dist = max(self._ray_over(m["guess"], member["w"]) for m in o["members"])
+            return dist if dist <= self.ray_merge else None
+        return None
+
     def _merge_score(self, o, member):
         """How well a detection fits cluster o (lower is better), or None if it
         does not belong there.
 
-        With `triangulate`, shoulder lines of sight from different cameras decide
-        where they can: any line that clearly misses a member's line means a
+        Camera IDs owned by different tracks keep detections apart, unless the
+        lines of sight cross (below). With `triangulate`, shoulder lines of sight
+        from different cameras decide where they can: any line that clearly misses a member's line means a
         different person (even when the floor estimates are close: neighbours,
         someone walking past a desk); a clear crossing means the same person,
         wherever the single-camera guesses landed (e.g. a standing person whose
@@ -178,9 +230,15 @@ class Fusion:
         merge_distance, or -- with blobs on -- when its trapezoid overlaps one in the
         cluster within the (looser) blob gate."""
         w, poly, ray = member["w"], member["poly"], member["ray"]
-        if member["owner"] is not None and any(
-                m["owner"] is not None and m["owner"] != member["owner"] for m in o["members"]):
-            return None     # each camera's own tracker has kept these apart for seconds
+        # Each camera's own tracker has kept these apart for seconds -- unless the
+        # shoulders' lines of sight cross below AND the floor estimates are within
+        # dup_merge_m: one person split in two. (Lines of sight to two different
+        # people often cross by coincidence; their estimates are then further apart.)
+        conflicting = [m for m in o["members"] if member["owner"] is not None
+                       and m["owner"] is not None and m["owner"] != member["owner"]]
+        owner_conflict = bool(conflicting)
+        split_ok = self.dup_merge > 0.0 and all(
+            np.linalg.norm(m["w"] - w) <= self.dup_merge for m in conflicting)
         d = float(np.linalg.norm(o["pos"] - w))
         compatible = all(np.linalg.norm(m["w"] - w) <= 3.0 * np.hypot(m["sigma"], member["sigma"]) + 0.1
                          for m in o["members"])
@@ -189,8 +247,14 @@ class Fusion:
             if any(r == "miss" for r, _ in rel):
                 return None
             gaps = [x[1] for r, x in rel if r == "cross"]
-            if gaps:
+            if gaps and (not owner_conflict or split_ok):
                 return float(np.mean(gaps)) if compatible else None
+        if owner_conflict:
+            return None
+        if self.ray_merge > 0.0:
+            fit = self._guess_fits(o, member)
+            if fit is not None:
+                return fit
         if d <= self.merge and compatible:
             return d
         if not self.use_blob or poly is None or d > self.blob_gate:
@@ -208,6 +272,7 @@ class Fusion:
                       "conf": float(d.get("conf", 1.0)),
                       "sigma": float(d.get("foot_sigma_m") or self.default_sigma),
                       "kind": d.get("foot_source", "box"), "ray": d.get("shoulder_ray"),
+                      "guess": d.get("guess_ray"),
                       "posture": d.get("posture_2d", "unknown"),
                       "legs_hidden": bool(d.get("legs_hidden", False))}
             member["owner"] = self._owner((d["cam"], d.get("id"))) if self.identity else None
@@ -403,6 +468,86 @@ class Fusion:
         tr.members = set(o["member_ids"])
         tr.sigma = o["sigma"]
 
+    # ---- duplicate merging -----------------------------------------------------------
+    def _absorb(self, keep_gid, drop_gid, now):
+        """Fold track drop_gid into keep_gid: one person, the older ID survives."""
+        keep, drop = self.tracks[keep_gid], self.tracks.pop(drop_gid)
+        if keep.last_t == now and drop.last_t == now:
+            wk, wd = 1.0 / max(keep.sigma, _SIG_MIN) ** 2, 1.0 / max(drop.sigma, _SIG_MIN) ** 2
+            keep.pos = (wk * keep.pos + wd * drop.pos) / (wk + wd)
+            keep.cams = set(keep.cams) | set(drop.cams)
+        elif drop.last_t > keep.last_t:
+            keep.pos, keep.cams = drop.pos, drop.cams
+        keep.members |= drop.members
+        keep.last_t = max(keep.last_t, drop.last_t)
+        keep.born_t = min(keep.born_t, drop.born_t)
+        keep.hits += drop.hits
+        keep.confirmed = keep.confirmed or drop.confirmed
+        for name in ("heights", "votes"):
+            merged = sorted(list(getattr(keep, name)) + list(getattr(drop, name)), key=lambda v: v[0])
+            getattr(keep, name).clear()
+            getattr(keep, name).extend(merged)
+        self._update_posture(keep, now)
+        for votes in self.owner_votes.values():     # camera IDs now belong to the survivor
+            for k, (t, g) in enumerate(votes):
+                if g == drop_gid:
+                    votes[k] = (t, keep_gid)
+        self._close_pairs = {p: v for p, v in self._close_pairs.items() if drop_gid not in p}
+
+    def _older(self, a, b):
+        ta, tb = self.tracks[a], self.tracks[b]
+        return (a, b) if (ta.born_t, a) <= (tb.born_t, b) else (b, a)
+
+    def _velocity(self, tr, now, window=1.0):
+        pts = [(t, xy) for t, xy in tr.history if now - t <= window]
+        if len(pts) < 2 or pts[-1][0] - pts[0][0] < 0.3:
+            return None
+        return (pts[-1][1] - pts[0][1]) / (pts[-1][0] - pts[0][0])
+
+    def _merge_split_owners(self, obs, obs_to_gid, now):
+        """A cluster whose camera IDs are owned by two tracks (allowed in when the
+        lines of sight crossed) shows the other track is the same person."""
+        assigned = set(obs_to_gid.values())
+        for oi, gid in list(obs_to_gid.items()):
+            for m in obs[oi]["member_ids"]:
+                other = self._owner(m)
+                if (other is not None and other != gid and other in self.tracks
+                        and gid in self.tracks and other not in assigned):
+                    keep, drop = self._older(gid, other)
+                    self._absorb(keep, drop, now)
+                    for k, g in obs_to_gid.items():
+                        if g == drop:
+                            obs_to_gid[k] = keep
+                    assigned = set(obs_to_gid.values())
+
+    def _merge_close_tracks(self, now):
+        """Two tracks seen this frame that stay within dup_merge_m, move together
+        and share no camera for dup_merge_s are one person seen twice (e.g. where
+        two cameras look along the same line and their lines of sight cannot tell)."""
+        seen = [g for g, tr in self.tracks.items() if tr.last_t == now]
+        for a, b in combinations(seen, 2):
+            if a not in self.tracks or b not in self.tracks:
+                continue
+            ta, tb = self.tracks[a], self.tracks[b]
+            pair = self._older(a, b)
+            close = (np.linalg.norm(ta.pos - tb.pos) <= self.dup_merge
+                     and not (set(ta.cams) & set(tb.cams)))
+            if close:
+                va, vb = self._velocity(ta, now), self._velocity(tb, now)
+                close = va is not None and vb is not None
+                if close:
+                    speeds = sorted((np.linalg.norm(va), np.linalg.norm(vb)))
+                    # Never a still person and a moving one (someone walking past a desk).
+                    close = (np.linalg.norm(va - vb) <= self.dup_merge_speed
+                             and not (speeds[0] < 0.1 and speeds[1] > 0.2))
+            if close:
+                first, _ = self._close_pairs.get(pair, (now, now))
+                self._close_pairs[pair] = [first, now]
+                if now - first >= self.dup_merge_s:
+                    self._absorb(*pair, now)
+            elif pair in self._close_pairs and now - self._close_pairs[pair][1] > 0.3:
+                del self._close_pairs[pair]
+
     # ---- per-frame update ---------------------------------------------------------
     def update(self, detections, now=None):
         now = time.time() if now is None else now
@@ -454,6 +599,8 @@ class Fusion:
                 obs_to_gid[oi] = gid
                 free.discard(gid)
 
+        if self.dup_merge > 0.0 and self.identity:
+            self._merge_split_owners(obs, obs_to_gid, now)
         for oi, o in enumerate(obs):
             if oi in obs_to_gid:
                 self._update_track(self.tracks[obs_to_gid[oi]], o, now)
@@ -473,6 +620,8 @@ class Fusion:
                 self.tracks[gid] = tr
                 obs_to_gid[oi] = gid
         self._vote_owners(obs, obs_to_gid, now)
+        if self.dup_merge > 0.0:
+            self._merge_close_tracks(now)
 
         # Age out stale tracks: tentative ones die fast (flicker never sticks),
         # settled seated people are held much longer when undetected.
@@ -480,6 +629,8 @@ class Fusion:
                 (self.settled_max_age if t.settled else self.max_age) if t.confirmed
                 else self.max_age_tent)]:
             del self.tracks[gid]
+        self._close_pairs = {p: v for p, v in self._close_pairs.items()
+                             if p[0] in self.tracks and p[1] in self.tracks}
 
         out = []
         for tr in self.tracks.values():

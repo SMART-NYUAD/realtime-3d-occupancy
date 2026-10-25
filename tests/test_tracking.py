@@ -379,6 +379,88 @@ class TrackingTests(unittest.TestCase):
         walker_a = min(first, key=lambda g: np.linalg.norm(np.subtract(first[g], [1.8, 5.0])))
         self.assertLess(np.linalg.norm(np.subtract(last[walker_a], [1.5 + 0.03 * 119, 5.0])), 0.3)
 
+    def test_split_person_is_merged_back(self):
+        """One person split into two tracks: yi04 and yi05 first place them 1.4 m off,
+        so those cameras' IDs come to belong to a second track. Once every camera
+        agrees, the ID rule alone kept the two apart for good (seen in the lab); now
+        the crossing lines of sight merge them back into the older track."""
+        rng = np.random.default_rng(12)
+        frames = []
+        for k in range(80):
+            xy = np.array([2.0 + 0.02 * k, 4.0 + 0.02 * k])
+            off = np.array([1.4, 0.0]) if k < 15 else np.zeros(2)
+            frames.append({"yi01": [detection("yi01", xy, "standing", pid=1, rng=rng)],
+                           "yi04": [detection("yi04", xy + off, "standing", pid=1, rng=rng)],
+                           "yi05": [detection("yi05", xy + off, "standing", pid=1, rng=rng)]})
+        _, new = run(frames)
+        _, locked = run(frames, NEW_CFG, {"dup_merge_m": 0, "ray_merge_m": 0})
+        self.assertGreater(len(publishable(new[14][1])), 1, "the split must happen first")
+        self.assertGreater(len(publishable(locked[-1][1])), 1, "without the fix it stays split")
+        final = publishable(new[-1][1])
+        self.assertEqual(len(final), 1, final)
+        self.assertEqual(final[0]["gid"], min(g["gid"] for g in new[14][1]))
+
+    # A spot on the line between yi01 and yi04, which look at it from nearly
+    # opposite directions: their lines of sight cannot tell people apart there.
+    FACING_SPOT = np.array([1.6, 6.0])
+
+    def test_split_person_merged_where_lines_of_sight_cannot_decide(self):
+        """Same split where yi01 and yi04 face each other (crossings decide nothing)
+        and the cameras disagree by 20 cm: the two tracks stay close, move together
+        and share no camera, so they are merged after a second."""
+        for cam in ("yi01", "yi04"):
+            d = detection(cam, self.FACING_SPOT, "standing")
+            self.assertTrue(np.all((d["kxy"] > 0) & (d["kxy"] < [W, H])), cam)
+        rng = np.random.default_rng(13)
+        frames = []
+        for k in range(60):
+            xy = self.FACING_SPOT + np.array([0.0, 0.01 * k])
+            off = np.array([1.0, 0.0]) if k < 15 else np.array([0.2, 0.0])
+            frames.append({"yi01": [detection("yi01", xy, "standing", pid=1, rng=rng)],
+                           "yi04": [detection("yi04", xy + off, "standing", pid=1, rng=rng)]})
+        _, new = run(frames)
+        _, locked = run(frames, NEW_CFG, {"dup_merge_m": 0, "ray_merge_m": 0})
+        self.assertGreater(len(publishable(locked[-1][1])), 1)
+        self.assertEqual(len(publishable(new[-1][1])), 1, new[-1][1])
+
+    def test_hidden_legs_guess_joins_through_line_of_sight(self):
+        """Standing behind furniture as seen by yi04 (upper body only): yi04 guesses
+        "seated" and lands about a metre too far. yi01 sees the ankles. Where their
+        lines of sight cannot cross-check (facing cameras), yi04's line of sight still
+        passes over yi01's estimate at a standing shoulder height, so it joins."""
+        rng = np.random.default_rng(14)
+        frames = [{"yi01": [detection("yi01", self.FACING_SPOT, "standing", pid=1, rng=rng)],
+                   "yi04": [detection("yi04", self.FACING_SPOT, "standing", pid=1, desk=True, rng=rng)]}
+                  for _ in range(20)]
+        _, new = run(frames)
+        _, old = run(frames, NEW_CFG, {"ray_merge_m": 0})
+        guess = [d for d in old[0][2] if d["cam"] == "yi04"][0]
+        self.assertGreater(np.linalg.norm(np.subtract(guess["world"], self.FACING_SPOT)), 0.8)
+        self.assertEqual(len(publishable(old[-1][1])), 2, old[-1][1])
+        tracks = publishable(new[-1][1])
+        self.assertEqual(len(tracks), 1, tracks)
+        self.assertEqual(set(tracks[0]["cams"]), {"yi01", "yi04"})
+        self.assertLess(np.linalg.norm(np.subtract(tracks[0]["world"], self.FACING_SPOT)), 0.15)
+
+    def test_people_close_together_are_not_merged(self):
+        """Two tracked people who meet and then walk side by side 0.45 m apart, both
+        seen by every camera: a camera that sees both proves they are two, so the
+        duplicate merging never joins them. (Two people who first appear already
+        this close are still taken as one: no track starts within dup_suppress_m.)"""
+        rng = np.random.default_rng(15)
+        frames = []
+        for k in range(90):
+            x = -1.0 + 0.03 * k
+            gap = max(0.45, 2.0 - 0.05 * k)          # they converge, then walk together
+            a = SEAT + np.array([x, 0.0])
+            frames.append({c: [detection(c, a, "standing", pid=1, rng=rng),
+                               detection(c, a + [0.0, gap], "standing", pid=2, rng=rng)]
+                           for c in POSES})
+        _, new = run(frames)
+        together = [len(publishable(tr)) for _, tr, _ in new[40:]]       # 0.45 m apart
+        self.assertEqual(min(together), 2, together)
+        self.assertEqual(len({g["gid"] for _, tr, _ in new for g in tr}), 2)
+
     def test_replay_and_metrics_tools(self):
         """A recorded session (keypoints only) replays through the tracking with the
         fixes on and off, and the metrics tool reads both logs."""

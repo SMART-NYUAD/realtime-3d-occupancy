@@ -188,6 +188,18 @@ fusion:
   # gray "ghost" left behind), up to identity_gate_m away.
   identity_matching: true
   identity_gate_m: 3.0
+  # One person split into two tracks (each camera's IDs then belong to a different
+  # one, which would keep them apart for good) is merged back: when their lines of
+  # sight cross and their estimates are within dup_merge_m, or when the two tracks
+  # stay within dup_merge_m, move together (speeds within dup_merge_speed_mps) and
+  # share no camera for dup_merge_s. 0 = off.
+  dup_merge_m: 0.5
+  dup_merge_s: 1.0
+  dup_merge_speed_mps: 0.4
+  # A torso/head estimate placed at a guessed height (e.g. a standing person whose
+  # legs are hidden, taken as seated) still joins a confident ankle estimate its
+  # line of sight passes within ray_merge_m of, at a plausible shoulder height.
+  ray_merge_m: 0.35
   # Two or more cameras seeing the shoulders: locate them where the lines of sight
   # cross (missing each other by at most tri_max_gap_m). This also measures the
   # shoulder height, which decides posture (below sitting_shoulder_max_m = sitting).
