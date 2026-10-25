@@ -75,11 +75,14 @@ class Localizer:
     def localize(self, cam, people, proj, frame_wh, hints=None):
         """Annotate each tracked detection in place with: cam, foot_px, foot_source,
         world (None if unmapped / outside the usable area), foot_sigma_m, floor_poly,
-        posture_2d, legs_hidden, shoulder_ray (map-space line of sight or None)."""
+        posture_2d, legs_hidden, shoulder_ray (map-space line of sight or None) and
+        guess_ray: for torso / head estimates, the line of sight they were placed
+        along ({"ray", "above": its height above the shoulders}), else None."""
         hints = hints or {}
         for p in people:
             p["cam"] = cam
             p["world"] = p["floor_poly"] = p["foot_sigma_m"] = p["shoulder_ray"] = None
+            p["guess_ray"] = None
             p["posture_2d"], p["legs_hidden"] = "unknown", False
             has_kp = p.get("kxy") is not None and p.get("kconf") is not None
             if has_kp:
@@ -115,6 +118,7 @@ class Localizer:
                 h, sh = self._shoulder_height(posture, hint, p["legs_hidden"], clipped)
                 w, sigma = self._plane_estimate(p["shoulder_ray"], h, sh)
                 p["foot_source"] = "torso"
+                p["guess_ray"] = {"ray": p["shoulder_ray"], "above": 0.0}
             if w is None and pose is not None:
                 head = self._visible(p, _HEAD)
                 if head:
@@ -122,6 +126,7 @@ class Localizer:
                     ray = proj.ray(*np.mean([p["kxy"][i] for i in head], axis=0))
                     w, sigma = self._plane_estimate(ray, h + self.h_head, sh)
                     p["foot_source"] = "head"
+                    p["guess_ray"] = {"ray": ray, "above": self.h_head}
             if w is None:                   # no usable torso/head: feet if seen, else old guess
                 if ankles and src in ("ankle", "ankles"):
                     w, sigma = self._ankles(p, proj, ankles, fx, fy, sig_px, src)

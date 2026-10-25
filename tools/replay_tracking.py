@@ -38,6 +38,7 @@ LEGACY = {
     "fusion.merge_distance_m": 1.6, "fusion.blob_merge_gate_m": 3.0, "fusion.dup_suppress_m": 1.0,
     "fusion.identity_matching": False, "fusion.triangulate": False,
     "fusion.seated_persistence": False, "fusion.settled_smoothing": False, "fusion.confirm_s": 0,
+    "fusion.dup_merge_m": 0, "fusion.ray_merge_m": 0,
 }
 
 
