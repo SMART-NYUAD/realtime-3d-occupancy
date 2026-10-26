@@ -72,7 +72,7 @@ def layout_report(plan, search, planner, cams, keep, now, score):
             "label": label, "current_camera": c["name"], "kept": bool(c["name"] in keep),
             "position_m": [round(float(v), 2) for v in C], "facing_deg": round(c["yaw"], 1),
             "tilt_down_deg": round(c["tilt"], 1),
-            "face_towards_m": [round(float(v), 2) for v in far_side(plan, C, c["yaw"]) + 0.0]})
+            "face_towards_m": [float(v) for v in far_side(plan, C, c["yaw"]).round(2) + 0.0]})
     return {"keep": list(keep), "score": round(score, 2), "after": after,
             "good_gain_m2": {p: round(after[p]["good_m2"] - now[p]["good_m2"], 1) for p in after},
             "cameras": record}, labels, status
