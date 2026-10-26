@@ -107,31 +107,31 @@
         4.08,
         2.5
       ],
-      "facing_deg": 168.0,
-      "tilt_down_deg": 14.0,
+      "facing_deg": 165.0,
+      "tilt_down_deg": 20.0,
       "face_towards_m": [
         0.0,
-        5.7
+        6.13
       ],
       "aim_floor_point_m": [
-        -2.17,
-        6.16
+        1.01,
+        5.86
       ],
       "after": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 37.9,
-          "poor_angle_m2": 0.1,
-          "single_m2": 12.7,
-          "unseen_m2": 12.2,
-          "three_plus_m2": 28.1
+          "good_m2": 38.0,
+          "poor_angle_m2": 0.3,
+          "single_m2": 12.0,
+          "unseen_m2": 12.6,
+          "three_plus_m2": 28.4
         }
       },
       "good_gain_m2": {
-        "seated": 9.1
+        "seated": 9.2
       },
-      "new_camera_sees_m2": 34.2,
-      "overlap_with_current_m2": 27.3
+      "new_camera_sees_m2": 35.4,
+      "overlap_with_current_m2": 28.9
     }
   ]
 }

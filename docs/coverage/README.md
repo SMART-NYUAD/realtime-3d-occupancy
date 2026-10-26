@@ -1,8 +1,9 @@
 # Camera coverage of the lab (October 2026)
 
-Results of `tools/coverage_planner.py` for the three current cameras (yi01, yi04,
-yi05), used to choose where to mount a fourth camera. Generated on 23 October 2026
-from the lab scan (`data/smart_lab.las`) and the calibration in `calib/`.
+Results of `tools/coverage_planner.py` (where to add a fourth camera) and
+`tools/layout_planner.py` (where to put all four) for the three current cameras
+(yi01, yi04, yi05). Generated in October 2026 from the lab scan
+(`data/smart_lab.las`) and the calibration in `calib/`.
 
 ## How to read the maps
 
@@ -65,11 +66,68 @@ lands on floor point (3.0, 6.75) inside the room (39.1 m² good for a seated per
 The other options are in `coverage_option_2.jpg` to `coverage_option_5.jpg`, and all
 the numbers are in `coverage_plan.json`.
 
+## Best positions for all four cameras
+
+Adding the fourth camera already means a new calibration walk with every camera, so
+moving the existing cameras at the same time costs only the remounting. To see
+whether that is worth it, `tools/layout_planner.py --variants` searched for the
+best four-camera layout for each number of today's cameras left where they are
+(trying every choice of which ones to keep). It scores each of about 3,000 possible
+camera positions once, then searches layouts: a greedy start, swapping one camera
+at a time while that helps, from 30 random starts (different starts all reached
+the same best layout). Every camera must share at least 2 m² of floor with another,
+so the calibration walk can link them, and tilts stay at 15° or more: a flatter
+camera sees further, but in a busy room people in front hide the people behind,
+which the planner does not model.
+
+| Plan | Cameras remounted | Good, seated | Good, standing | Unseen, seated | Map |
+|---|---|---|---|---|---|
+| Today (3 cameras) | - | 28.8 m² | 35.8 m² | 19.1 m² | `coverage_current.jpg` |
+| Keep all three, add one | 0 | 39.1 m² | 43.1 m² | 13.9 m² | `coverage_option_1.jpg` |
+| Keep yi04 and yi05, move yi01, add one | 1 | 43.0 m² | 47.0 m² | 12.1 m² | `layout/layout_keep_yi04+yi05.jpg` |
+| Keep yi04, move yi01 and yi05, add one | 2 | 45.6 m² | 50.4 m² | 8.9 m² | `layout/layout_keep_yi04.jpg` |
+| Place all four from scratch | 3 | 47.5 m² | 53.1 m² | 8.0 m² | `layout/layout_keep_none.jpg` |
+
+Each camera moved gains less than the one before: about 4 m² of good floor for the
+first, 3 m² for the second and 2 m² for the third.
+
+**Moving one camera** gives most of the benefit for the least work. yi04 and yi05
+stay; yi01 slides about 2 m along the same wall and the new camera goes on the right
+wall:
+
+| Camera | Mount at (x, y), 2.5 m high | Face towards | Tilt down | Picture centre on the floor |
+|---|---|---|---|---|
+| yi04, yi05 | stay where they are | | | |
+| yi01 (moved) | (3.34, 9.98) top wall | (3.86, 0.00) | 24° | (3.64, 4.37) |
+| New camera | (7.94, 7.48) right wall | (0.00, 5.35) | 24° | (2.52, 6.02) |
+
+![Keep yi04 and yi05, move yi01, add one](layout/layout_keep_yi04+yi05.jpg)
+
+**Placing all four from scratch** gives the most coverage: two cameras on each long
+wall, each looking across the room.
+
+| Camera | Mount at (x, y), 2.5 m high | Face towards | Tilt down | Picture centre on the floor |
+|---|---|---|---|---|
+| A | (0.44, 7.78) left wall | (8.28, 3.78) | 23° | (5.69, 5.10) |
+| B | (7.94, 7.48) right wall | (0.46, 0.00) | 28° | (4.62, 4.15) |
+| C | (7.34, 3.08) right side | (0.00, 6.35) | 16° | beyond the far wall |
+| D | (1.04, 4.18) left side, beside tall furniture | (7.25, 10.39) | 16° | (7.21, 10.34) |
+
+![All four placed from scratch](layout/layout_keep_none.jpg)
+
+On the maps, white cameras stay where they are, magenta ones are new positions, and
+an outlined dot marks where a camera that moves is today. Any of the Yi cameras can
+go to any of the new positions; each keeps its own lens file. All numbers are in
+`layout/layout_plan.json`.
+
+For "keep all three, add one", the layout search picks (7.74, 3.48) on the right wall
+instead of (7.94, 8.08). The two score the same (53.6), so either works.
+
 ## Before mounting
 
 - The scan is a snapshot. Furniture moved since then, or glass the scanner saw
   through, is not known. Hold the camera at the spot and check its live view first.
-- The planner does not know where power sockets or mounting points are. To compare
+- The planner does not know which walls or furniture can take a mount. To compare
   only the spots that are possible, run
   `python tools/coverage_planner.py --spot x,y --spot x,y`.
 - The strip along the bottom of the map (y below about 1.5 m) stays unseen with every
@@ -84,6 +142,7 @@ the numbers are in `coverage_plan.json`.
 python tools/coverage_planner.py --image-format jpg --out docs/coverage
 python tools/coverage_planner.py --posture seated --top 3 --image-format jpg --out docs/coverage/seated
 python tools/coverage_planner.py --posture standing --top 3 --image-format jpg --out docs/coverage/standing
+python tools/layout_planner.py --variants --image-format jpg --out docs/coverage/layout
 ```
 
 Rerun after any camera is moved, added or recalibrated.

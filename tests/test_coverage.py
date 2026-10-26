@@ -4,6 +4,7 @@ mounting-spot search on a synthetic room, and the real scan lining up with the m
 Run:  python -m unittest tests/test_coverage.py -v
 """
 from pathlib import Path
+import json
 import os
 import subprocess
 import sys
@@ -160,6 +161,59 @@ class TestSearch(unittest.TestCase):
         self.assertAlmostEqual(both.cell_area, grid.cell_area / 2)
 
 
+class TestLayoutSearch(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.occ = cov.Occupancy(room_points())
+        cls.grid = cov.FloorGrid(_Plan(), 0.5)
+        cls.existing = camera_at([0.25, 0.25, 2.5], [3.0, 3.0, 0.8])
+        cls.existing.name = "cam1"
+        cls.spots = cov.mount_spots(_Plan(), cls.occ, 2.5, spacing=0.75)
+
+    def search(self, **kw):
+        empty = cov.Planner([], self.grid, self.occ)
+        return cov.LayoutSearch(empty, LENS, self.spots, current=[self.existing], **kw)
+
+    def test_planner_without_cameras(self):
+        p = cov.Planner([], self.grid, self.occ, "both")
+        self.assertEqual(p.seen.shape, (0, len(p.xy)))
+        self.assertTrue((p.status == cov.UNSEEN).all())
+
+    def test_keeping_all_matches_single_camera_search(self):
+        search = self.search()
+        cams, score = search.run(2, ["cam1"], restarts=3)
+        self.assertEqual(len(cams), 2)
+        kept = [c for c in cams if c["name"] == "cam1"][0]
+        np.testing.assert_array_equal(kept["C"], self.existing.C)       # left exactly in place
+        np.testing.assert_array_equal(kept["R"], self.existing.R)
+        planner = cov.Planner([self.existing], self.grid, self.occ)
+        single = planner.search(LENS, self.spots, 2.5, top=1)[0]["score"]
+        self.assertGreater(score, 0.95 * single)
+
+    def test_free_layout_meets_rules_and_beats_its_start(self):
+        search = self.search()
+        start = search.construct(3)
+        cams, score = search.run(3, restarts=3, seed=1)
+        self.assertEqual(len(cams), 3)
+        self.assertGreaterEqual(score, search.score(start) - 1e-6)
+        for a in range(3):
+            for b in range(a + 1, 3):
+                self.assertGreaterEqual(np.hypot(*(cams[a]["C"][:2] - cams[b]["C"][:2])), 1.0)
+        status, count = search.evaluate(cams)
+        good = np.mean(status == cov.GOOD)
+        self.assertGreater(good, 0.5)
+        shared = [[(c["vis"] & d["vis"]).sum() * search.p.cell_area for d in cams] for c in cams]
+        for a in range(3):                                   # each overlaps another camera
+            self.assertGreaterEqual(max(shared[a][b] for b in range(3) if b != a), 2.0)
+        again, score2 = search.run(3, restarts=3, seed=1)
+        self.assertAlmostEqual(score, score2)
+
+    def test_impossible_overlap_rule_gives_no_layout(self):
+        search = self.search(min_overlap_m2=1e6)
+        cams, _ = search.run(2, restarts=1)
+        self.assertLess(len(cams), 2)
+
+
 LAS = ROOT / "data" / "smart_lab.las"
 
 
@@ -215,6 +269,20 @@ class TestRealScan(unittest.TestCase):
                          "coverage_option_1.png", "coverage_plan.json"):
                 self.assertTrue(os.path.exists(os.path.join(out, name)), name)
             self.assertIn("Option 1", r.stdout)
+
+    def test_layout_cli_writes_map_and_report(self):
+        with tempfile.TemporaryDirectory() as out:
+            r = subprocess.run([sys.executable, "tools/layout_planner.py", "--out", out,
+                                "--restarts", "1", "--keep", "yi01", "--keep", "yi04",
+                                "--keep", "yi05"],
+                               cwd=ROOT, capture_output=True, text=True, timeout=300)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(os.path.exists(os.path.join(out, "layout_keep_yi01+yi04+yi05.png")))
+            with open(os.path.join(out, "layout_plan.json")) as f:
+                plan = json.load(f)
+            cams = plan["layouts"][0]["cameras"]
+            self.assertEqual(len(cams), 4)
+            self.assertEqual(sum(c["kept"] for c in cams), 3)
 
 
 if __name__ == "__main__":

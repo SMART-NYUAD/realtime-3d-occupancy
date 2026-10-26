@@ -292,7 +292,7 @@ class Planner:
         self.hd = np.vstack([hd for _, hd in targets])
         self.xy = np.tile(grid.xy, (len(self.postures), 1))
         self.cell_area = grid.cell_area / len(self.postures)
-        self.seen = np.array([self._visible(c) for c in cameras]).reshape(len(cameras), -1)
+        self.seen = np.array([self._visible(c) for c in cameras], bool).reshape(len(cameras), len(self.xy))
         self.status, self.count = classify(self.seen, [c.C for c in cameras], self.xy, min_angle_deg)
 
     def split(self, values):
@@ -338,13 +338,16 @@ class Planner:
         return status
 
     def search(self, lens, spots, height=2.5, yaws=None, tilts=(20, 28, 36, 44),
-               top=5, separation_m=1.5, mirrored=False, progress=None):
+               top=5, separation_m=1.5, mirrored=False, progress=None, min_tilt_deg=15.0):
         """Best new-camera placements, best first: list of dicts with C, yaw, tilt,
         score and the camera. `spots` are (x, y) or (x, y, z) mounting points (see
         mount_spots). Without `yaws`, directions within 75 degrees of facing away
         from the nearest wall are tried. Each spot keeps its best aim; spots closer
-        than separation_m to a better one are skipped; the top ones are then refined."""
+        than separation_m to a better one are skipped; the top ones are then refined.
+        Tilts stay at or above min_tilt_deg: a nearly level camera sees far, but in a
+        busy room people in front hide the people behind, which is not modelled."""
         r_max = fov_radius(lens)
+        tilts = [t for t in tilts if t >= min_tilt_deg] or [min_tilt_deg]
         results = []
         for n, xy in enumerate(spots):
             C = np.array([xy[0], xy[1], height if len(xy) < 3 else xy[2]], float)
@@ -373,7 +376,7 @@ class Planner:
         for r in picked:                                  # finer aim around the best one
             best = r
             for yaw in r["yaw"] + np.arange(-12, 13, 3):
-                for tilt in np.clip(r["tilt"] + np.arange(-8, 9, 2), 10, 60):
+                for tilt in np.clip(r["tilt"] + np.arange(-8, 9, 2), min_tilt_deg, 60):
                     best = self._try(lens, r_max, r["C"], r["clear"], yaw, tilt, mirrored, best)
             best = {k: v for k, v in best.items() if k != "clear"}
             best["yaw"] = float((best["yaw"] + 180) % 360 - 180)
@@ -394,3 +397,239 @@ class Planner:
         if best is None or s > best["score"] + 1e-9:
             return {"C": C, "yaw": float(yaw), "tilt": float(tilt), "score": float(s), "clear": clear}
         return best
+
+
+class LayoutSearch:
+    """Chooses a whole set of cameras at once (all of them, or some while others stay).
+
+    Every candidate camera (mounting spot x direction x tilt, plus each current
+    camera exactly where it is) is scored once: which floor spots it sees. A layout's
+    score is then cheap to compute from those masks, so many layouts can be tried:
+    a greedy start (best pair, then the best addition, and so on), improved by
+    swapping one camera at a time for any other candidate until no swap helps,
+    repeated from randomised greedy starts, and finally a finer aim for each moved
+    camera. Rules every layout must meet:
+      - cameras at least min_separation_m apart (seen from above)
+      - every camera shares at least min_overlap_m2 of seen floor with another, and
+        all cameras link up through such overlaps (the calibration walk needs this)
+    The score is the same as Planner.search: well-covered floor plus a little for
+    floor that is at least seen. Moved cameras keep a tilt of at least min_tilt_deg
+    (see Planner.search).
+    """
+
+    def __init__(self, planner, lens, spots, height=2.5, tilts=(20, 28, 36, 44), yaw_span=75,
+                 yaw_step=15, mirrored=False, current=(), min_separation_m=1.0,
+                 min_overlap_m2=2.0, seen_weight=0.25, min_tilt_deg=15.0):
+        p = self.p = planner
+        self.min_tilt_deg = min_tilt_deg
+        tilts = [t for t in tilts if t >= min_tilt_deg] or [min_tilt_deg]
+        self.lens, self.mirrored, self.seen_weight = lens, mirrored, seen_weight
+        self.min_separation_m, self.min_overlap_m2 = min_separation_m, min_overlap_m2
+        self.r_max = fov_radius(lens)
+        positions = [np.array([xy[0], xy[1], height if len(xy) < 3 else xy[2]], float) for xy in spots]
+        positions += [np.asarray(c.C, float) for c in current]
+        self.P = np.array(positions).reshape(-1, 3)
+        self.clear = [clear_from(p.occ, C, p.sh, p.hd) & (np.linalg.norm(p.hd - C, axis=1) <= p.max_range_m)
+                      for C in self.P]
+        cands, vis = [], []
+        for i in range(len(spots)):
+            C = self.P[i]
+            out = wall_yaw(p.occ, C[:2], C[2])
+            for yaw in out + np.arange(-yaw_span, yaw_span + 1, yaw_step):
+                for tilt in tilts:
+                    R = look_rotation(yaw, tilt, mirrored)
+                    v = self._vis(R, C, self.clear[i], lens, self.r_max)
+                    if v.any():
+                        cands.append({"pos": i, "yaw": float(yaw), "tilt": float(tilt), "R": R,
+                                      "lens": lens, "name": None})
+                        vis.append(v)
+        for k, cam in enumerate(current):
+            i = len(spots) + k
+            fwd = cam.R[2]
+            cands.append({"pos": i, "yaw": float(np.degrees(np.arctan2(fwd[1], fwd[0]))),
+                          "tilt": float(np.degrees(np.arcsin(-fwd[2]))), "R": cam.R,
+                          "lens": cam.lens, "name": cam.name})
+            vis.append(self._vis(cam.R, cam.C, self.clear[i], cam.lens, cam.r_max))
+        self.cands = cands
+        self.vis = np.array(vis, bool).reshape(len(cands), len(p.xy))
+        self.pos = np.array([c["pos"] for c in cands], int)
+        self.current_index = {c["name"]: n for n, c in enumerate(cands) if c["name"]}
+        s_min = np.sin(np.radians(p.min_angle_deg))
+        bear = np.array([_bearings(C, p.xy) for C in self.P]).reshape(len(self.P), len(p.xy))
+        self.angle_ok = np.zeros((len(self.P), len(self.P), len(p.xy)), bool)
+        for i in range(len(self.P)):
+            self.angle_ok[i] = np.abs(np.sin(bear[i] - bear)) >= s_min
+        self.dist = np.linalg.norm(self.P[:, None, :2] - self.P[None, :, :2], axis=2)
+        v32 = self.vis.astype(np.float32)
+        self.overlap = (v32 @ v32.T) * p.cell_area          # m2 of floor both cameras see
+
+    def _vis(self, R, C, clear, lens, r_max):
+        p = self.p
+        return (clear & in_picture(lens, R, C, p.sh, p.margin_px, r_max)
+                & in_picture(lens, R, C, p.hd, p.margin_px, r_max))
+
+    # ---- scoring ----
+    def _good_count(self, S):
+        good = np.zeros(self.vis.shape[1], bool)
+        count = np.zeros(self.vis.shape[1], int)
+        for a, i in enumerate(S):
+            count += self.vis[i]
+            for j in S[a + 1:]:
+                good |= self.vis[i] & self.vis[j] & self.angle_ok[self.pos[i], self.pos[j]]
+        return good, count
+
+    def _components(self, S):
+        comps, left = [], list(S)
+        while left:
+            comp, todo = [], [left.pop()]
+            while todo:
+                i = todo.pop()
+                comp.append(i)
+                linked = [j for j in left if self.overlap[i, j] >= self.min_overlap_m2]
+                left = [j for j in left if j not in linked]
+                todo += linked
+            comps.append(comp)
+        return comps
+
+    def valid(self, S):
+        if any(self.dist[self.pos[i], self.pos[j]] < self.min_separation_m
+               for a, i in enumerate(S) for j in S[a + 1:]):
+            return False
+        return len(S) < 2 or len(self._components(S)) == 1
+
+    def score(self, S):
+        if not self.valid(S):
+            return -np.inf
+        good, count = self._good_count(S)
+        return float(self.p.cell_area * (good.sum() + self.seen_weight * (count > 0).sum()))
+
+    def add_scores(self, S):
+        """Score of S plus each candidate, for every candidate (-inf where a rule fails)."""
+        good, count = self._good_count(S)
+        V = self.vis
+        g = np.repeat(good[None], len(V), axis=0)
+        for k in S:
+            g |= V & self.vis[k] & self.angle_ok[self.pos, self.pos[k]]
+        sc = self.p.cell_area * (g.sum(axis=1) + self.seen_weight * (V | (count > 0)).sum(axis=1))
+        ok = np.ones(len(V), bool)
+        for k in S:
+            ok &= self.dist[self.pos, self.pos[k]] >= self.min_separation_m
+        for comp in self._components(S):
+            ok &= (self.overlap[:, comp] >= self.min_overlap_m2).any(axis=1)
+        sc[~ok] = -np.inf
+        return sc
+
+    # ---- search ----
+    def construct(self, n, fixed=(), rng=None, top=8):
+        """Greedy layout of n cameras containing `fixed`; with rng, each step picks at
+        random among the `top` best additions."""
+        S = list(fixed)
+        if not S:
+            if rng is None:                                   # best pair among strong singles
+                singles = np.argsort(-self.vis.sum(axis=1))[:200]
+                best = (-np.inf, None, None)
+                for i in singles:
+                    sc = self.add_scores([i])
+                    j = int(np.argmax(sc))
+                    if sc[j] > best[0]:
+                        best = (sc[j], int(i), j)
+                if best[1] is None:
+                    return S
+                S = [best[1], best[2]]
+            else:
+                S = [int(rng.choice(np.argsort(-self.vis.sum(axis=1))[:50]))]
+        while len(S) < n:
+            sc = self.add_scores(S)
+            order = np.argsort(-sc)
+            order = order[np.isfinite(sc[order])]
+            if not len(order):
+                break
+            S.append(int(order[0] if rng is None else rng.choice(order[:top])))
+        return S
+
+    def improve(self, S, fixed=()):
+        """Swap one camera at a time for the candidate that helps most, until no swap helps."""
+        S, cur = list(S), self.score(S)
+        while True:
+            best = (cur + 1e-9, None, None)
+            for slot, member in enumerate(S):
+                if member in fixed:
+                    continue
+                others = S[:slot] + S[slot + 1:]
+                sc = self.add_scores(others)
+                j = int(np.argmax(sc))
+                if sc[j] > best[0]:
+                    best = (sc[j], slot, j)
+            if best[1] is None:
+                return S, cur
+            S[best[1]] = best[2]
+            cur = float(best[0])
+
+    def run(self, n, fixed_names=(), restarts=20, seed=0, progress=None):
+        """Best layout of n cameras keeping the named current cameras where they are.
+        Returns (cameras, score): cameras are dicts with C, yaw, tilt, R, lens, name
+        (a current camera's name when it stays where it is) and vis."""
+        fixed = [self.current_index[name] for name in fixed_names]
+        rng = np.random.default_rng(seed)
+        best_S, best_sc = self.improve(self.construct(n, fixed), fixed)
+        for r in range(restarts):
+            S, sc = self.improve(self.construct(n, fixed, rng), fixed)
+            if sc > best_sc + 1e-9 and len(S) == n:
+                best_S, best_sc = S, sc
+            if progress:
+                progress(r + 1, restarts)
+        cams = [{**self.cands[i], "C": self.P[self.cands[i]["pos"]], "vis": self.vis[i],
+                 "fixed": i in fixed} for i in best_S]
+        return self.refine(cams)
+
+    def _score_cams(self, cams):
+        good = np.zeros(self.vis.shape[1], bool)
+        count = np.zeros(self.vis.shape[1], int)
+        s_min = np.sin(np.radians(self.p.min_angle_deg))
+        bear = [_bearings(c["C"], self.p.xy) for c in cams]
+        for a, c in enumerate(cams):
+            count += c["vis"]
+            for b in range(a + 1, len(cams)):
+                good |= c["vis"] & cams[b]["vis"] & (np.abs(np.sin(bear[a] - bear[b])) >= s_min)
+        links = [[(c["vis"] & d["vis"]).sum() * self.p.cell_area >= self.min_overlap_m2
+                  for d in cams] for c in cams]
+        seen, todo = {0}, [0]
+        while todo:
+            a = todo.pop()
+            for b in range(len(cams)):
+                if links[a][b] and b not in seen:
+                    seen.add(b)
+                    todo.append(b)
+        if len(seen) < len(cams):
+            return -np.inf
+        return float(self.p.cell_area * (good.sum() + self.seen_weight * (count > 0).sum()))
+
+    def refine(self, cams, passes=2):
+        """Finer direction and tilt for each camera that moves (current cameras that
+        stay, and kept ones, are left exactly as they are)."""
+        cur = self._score_cams(cams)
+        for _ in range(passes):
+            for c in cams:
+                if c["fixed"] or c["name"]:
+                    continue
+                i = int(np.flatnonzero((self.P == c["C"]).all(axis=1))[0])
+                base = dict(c)
+                for yaw in base["yaw"] + np.arange(-12, 13, 3):
+                    for tilt in np.clip(base["tilt"] + np.arange(-8, 9, 2), self.min_tilt_deg, 60):
+                        R = look_rotation(yaw, tilt, self.mirrored)
+                        trial = {**c, "yaw": float(yaw), "tilt": float(tilt), "R": R,
+                                 "vis": self._vis(R, c["C"], self.clear[i], self.lens, self.r_max)}
+                        others = [d if d is not c else trial for d in cams]
+                        sc = self._score_cams(others)
+                        if sc > cur + 1e-9:
+                            cur = sc
+                            c.update(trial)
+        for c in cams:
+            c["yaw"] = float((c["yaw"] + 180) % 360 - 180)
+            c["camera"] = Camera(c["name"] or "new", c["R"], c["C"], c["lens"])
+        return cams, cur
+
+    def evaluate(self, cams):
+        """(status, count) over the planner's floor spots for a list of layout cameras."""
+        seen = np.array([c["vis"] for c in cams], bool).reshape(len(cams), len(self.p.xy))
+        return classify(seen, [c["C"] for c in cams], self.p.xy, self.p.min_angle_deg)
