@@ -20,7 +20,8 @@ needs it), and cameras stay --min-separation m apart.
 kept, and reports the best of each, so moving cameras can be weighed against the
 work it takes (new mounts and a calibration walk for every moved camera).
 
-Writes to --out: layout_keep_<names>.png per layout and layout_plan.json. The scan
+Writes to --out: layout_keep_<names>.png per layout and layout_plan.json; with
+--focus the maps still cover the whole room, with the scored areas outlined. The scan
 is a snapshot; check spots with the live camera view before mounting.
 """
 import argparse
@@ -126,6 +127,8 @@ def main():
 
     today = cov.Planner(cameras, grid, occ, args.posture, args.min_angle, args.max_range)
     now = today.summaries()
+    # Maps always show the whole room; with --focus the scored areas are outlined.
+    whole_grid = grid if not args.focus else cov.FloorGrid(plan, args.cell, furniture=furniture)
     empty = cov.Planner([], grid, occ, args.posture, args.min_angle, args.max_range)
     spots = cov.mount_spots(plan, occ, args.height)
     print(f"[layout] scoring candidates at {len(spots)} mounting spots plus today's "
@@ -170,8 +173,15 @@ def main():
         moved = [(cam, label) for cam, label in labels if label not in names]
         name = "layout_keep_" + ("+".join(keep) if keep else "none")
         title = f"{args.cameras} cameras, keeping {', '.join(keep) or 'none'}{both_note}"
-        img = draw_map(plan, grid, today.worst(status), stay, title, new=moved,
-                       faded=[c for c in cameras if c.name not in in_layout])
+        if args.focus:
+            whole = cov.Planner([c["camera"] for c in cams], whole_grid, occ, args.posture,
+                                args.min_angle, args.max_range)
+            drawn = whole.worst()
+        else:
+            drawn = today.worst(status)
+        img = draw_map(plan, whole_grid, drawn, stay, title, new=moved,
+                       faded=[c for c in cameras if c.name not in in_layout],
+                       outline=args.focus or ())
         cv2.imwrite(os.path.join(args.out, f"{name}.{args.image_format}"), img,
                     [cv2.IMWRITE_JPEG_QUALITY, 88] if args.image_format == "jpg" else [])
     with open(os.path.join(args.out, "layout_plan.json"), "w") as f:

@@ -2,8 +2,9 @@
 
 Most people work in the area from **(3, 2) to (8, 10)** on the map. The corner from
 **(0, 1) to (4, 2)** also matters and is where many misses happen today. The runs
-in this folder score only those two areas (the middle corridor lies inside the
-first one); the rest of the room is left uncoloured on the maps. The results for
+in this folder rank options by those two areas only (the middle corridor lies
+inside the first one). The maps still show coverage for the whole room, with the
+two scored areas outlined in light blue. The results for
 the whole room are one folder up, in [`../README.md`](../README.md).
 
 Numbers below are for a **seated** person, the harder case, as "% good / % unseen"

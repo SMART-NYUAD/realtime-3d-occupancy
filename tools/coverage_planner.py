@@ -26,6 +26,7 @@ and ranked by the floor area that becomes "good". Writes to --out:
   coverage_candidates.png   the ranked mounting spots on today's coverage
   coverage_option_N.png     coverage with option N added
   coverage_plan.json        all numbers
+With --focus the maps still cover the whole room, with the scored areas outlined.
 (--image-format jpg for smaller images). The saved lab results are in docs/coverage/.
 Map coordinates: meters from the scan's bottom-left corner, x to the right, y up,
 as on the tracker's map. The scan is a snapshot: furniture moved since then, or
@@ -54,6 +55,7 @@ LABELS = {cov.UNSEEN: "unseen", cov.SINGLE: "one camera",
           cov.POOR: "2+ cameras, poor angle", cov.GOOD: "good (2 cameras, good angle)"}
 SCALE = 2                                  # map pixels per plan pixel in the images
 NEW = (220, 60, 220)
+OUTLINE = (255, 200, 0)                    # BGR: light blue
 
 
 def floats(text, n):
@@ -83,10 +85,11 @@ def to_px(plan, x, y):
     return int(px * SCALE), int(py * SCALE)
 
 
-def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=()):
+def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=(), outline=()):
     """Coverage map. `cameras` are drawn white; `new` (a camera, or a list of
     (camera, label)) magenta; `faded` cameras as an outlined dot only (e.g. where a
-    camera that moves is today); `markers` are numbered (position, facing) pairs."""
+    camera that moves is today); `markers` are numbered (position, facing) pairs;
+    `outline` rectangles (x1, y1, x2, y2) mark the areas a --focus ranking scored."""
     bg = cv2.resize(plan.background(), None, fx=SCALE, fy=SCALE, interpolation=cv2.INTER_NEAREST)
     overlay = bg.copy()
     half = grid.cell / 2
@@ -97,6 +100,9 @@ def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=())
         cv2.rectangle(overlay, to_px(plan, x - half, y + half), to_px(plan, x + half, y - half),
                       (90, 90, 90), -1)
     img = cv2.addWeighted(overlay, 0.55, bg, 0.45, 0)
+    for x1, y1, x2, y2 in outline:
+        cv2.rectangle(img, to_px(plan, min(x1, x2), max(y1, y2)), to_px(plan, max(x1, x2), min(y1, y2)),
+                      OUTLINE, 3)
     for m in range(0, int(plan.width_m) + 1):                      # 1 m grid
         cv2.line(img, to_px(plan, m, 0), to_px(plan, m, plan.height_m), (200, 200, 200), 1)
         cv2.putText(img, str(m), (to_px(plan, m, 0)[0] - 4, to_px(plan, m, 0)[1] + 16),
@@ -123,7 +129,7 @@ def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=())
         cv2.arrowedLine(img, p, end, NEW, 2, tipLength=0.3)
         cv2.circle(img, p, 11, NEW, -1)
         cv2.putText(img, str(k), (p[0] - 5, p[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-    return add_legend(img, title)
+    return add_legend(img, title, outlined=bool(outline))
 
 
 def draw_camera(img, plan, cam, colour, label):
@@ -147,9 +153,11 @@ def draw_camera(img, plan, cam, colour, label):
     cv2.putText(img, label, (p0[0] + 9, p0[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, colour, 1)
 
 
-def add_legend(img, title):
+def add_legend(img, title, outlined=False):
     rows = [(LABELS[s], COLOURS[s]) for s in (cov.GOOD, cov.POOR, cov.SINGLE, cov.UNSEEN)]
     rows.append(("desk / cabinet (not scored)", (90, 90, 90)))
+    if outlined:
+        rows.append(("outlined: the areas the ranking scored", OUTLINE))
     panel = np.full((40 + 22 * len(rows), img.shape[1], 3), 245, np.uint8)
     cv2.putText(panel, title, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (20, 20, 20), 1, cv2.LINE_AA)
     for k, (text, colour) in enumerate(rows):
@@ -223,6 +231,12 @@ def main():
     mirrored = np.linalg.det(cameras[0].R) < 0
 
     planner = cov.Planner(cameras, grid, occ, args.posture, args.min_angle, args.max_range)
+    # With --focus the ranking scores only those areas, but the maps still show the
+    # whole room, with the scored areas outlined.
+    whole = planner if not args.focus else cov.Planner(
+        cameras, cov.FloorGrid(plan, args.cell, furniture=furniture), occ, args.posture,
+        args.min_angle, args.max_range)
+    outline = args.focus or ()
     who = " and ".join(f"{p} people" for p in planner.postures)
     now = planner.summaries()
     print(f"[coverage] {grid.cell_area * len(grid.xy):.1f} m2 of floor scored for {who}, "
@@ -253,8 +267,9 @@ def main():
 
     one = planner.postures[0] if len(planner.postures) == 1 else None
     both_note = "(each spot: worse of seated / standing)"
-    save("coverage_current", draw_map(plan, grid, planner.worst(), cameras,
-                                      f"Today: {describe(now[one])}" if one else f"Today {both_note}"))
+    save("coverage_current", draw_map(plan, whole.grid, whole.worst(), cameras,
+                                      f"Today: {describe(now[one])}" if one else f"Today {both_note}",
+                                      outline=outline))
     report = {"postures": planner.postures, "mount_height_m": args.height,
               "min_angle_deg": args.min_angle, "max_range_m": args.max_range,
               "cell_m": args.cell, "cameras": {c.name: [round(v, 3) for v in c.C] for c in cameras},
@@ -288,11 +303,13 @@ def main():
             "new_camera_sees_m2": round(float(vis.sum() * planner.cell_area), 1),
             "overlap_with_current_m2": round(overlap, 1)})
         title = f"Option {k}: {describe(after[one], now[one])}" if one else f"Option {k} added {both_note}"
-        save(f"coverage_option_{k}", draw_map(plan, grid, planner.worst(status), cameras, title,
-                                              new=o["camera"]))
-    save("coverage_candidates", draw_map(plan, grid, planner.worst(), cameras,
+        drawn = status if whole is planner else whole.with_camera(o["camera"])[0]
+        save(f"coverage_option_{k}", draw_map(plan, whole.grid, whole.worst(drawn), cameras, title,
+                                              new=o["camera"], outline=outline))
+    save("coverage_candidates", draw_map(plan, whole.grid, whole.worst(), cameras,
                                          "Numbered: best mounting spots (arrow = facing)",
-                                         markers=[(o["C"], o["yaw"]) for o in options]))
+                                         markers=[(o["C"], o["yaw"]) for o in options],
+                                         outline=outline))
     with open(os.path.join(args.out, "coverage_plan.json"), "w") as f:
         json.dump(report, f, indent=2)
     print(f"\n[coverage] images and coverage_plan.json in {args.out}/ ({time.time() - t0:.0f} s)")
