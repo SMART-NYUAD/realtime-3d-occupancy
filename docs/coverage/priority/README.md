@@ -40,6 +40,7 @@ live system puts people from (8, 9) at around (6, 8).
 | C | Move yi01, add one (balanced with the bottom-left corner) | `balanced/layout_keep_yi04+yi05.jpg` | 54 / 70 | 83 / 93 | 60 / 52 | 43 / 52 | 67 / 73 |
 | D | Move yi01 and yi05, add one | `layout/layout_keep_yi04.jpg` | 72 / 91 | 88 / 98 | 22 / 22 | 52 / 76 | 71 / 77 |
 | E | Move all four | `layout/layout_keep_none.jpg` | 67 / 96 | 87 / 98 | 65 / 65 | 57 / 86 | 75 / 82 |
+| F | Move all four, from a longer search | `move_all_long_search/layout_keep_none.jpg` | 63 / 100 | 83 / 97 | 95 / 95 | 62 / 100 | 73 / 83 |
 
 What the table shows:
 
@@ -50,8 +51,13 @@ What the table shows:
 - **With two changes, the top strip and the bottom-left corner cannot both be
   fixed**: B fixes the top strip, C fixes the bottom-left corner and half-fixes the
   top strip.
-- **Only moving all four cameras (E)** fixes both, and gives the best coverage of
-  the whole room.
+- **Only moving all four cameras (E or F)** fixes both, and gives the best coverage
+  of the whole room.
+- **E and F are two equally good ways to move all four** (their scores are within
+  0.4%). Several quite different layouts score this close, and a longer search
+  found F. F gives up a little for seated people in the top strip (63% vs 67%)
+  and the work area (83% vs 87%), and gains a lot in both corners: the
+  bottom-left corner becomes 95% good and the (8, 9) corner 62% / 100%.
 
 ## Recommendation: option B
 
@@ -70,8 +76,9 @@ stay, yi01 moves down the left wall, and the new camera goes on the right wall.
 room, seen from above. To aim, have someone stand at the "picture centre" point and
 centre them in the camera's live view.
 
-If the bottom-left corner turns out to matter as much, the step after B is option
-E (move all four); option C trades most of B's top-strip gain for that corner.
+If the bottom-left corner turns out to matter as much, the step after B is moving
+all four (option E, or F for the best corners); option C trades most of B's
+top-strip gain for that corner.
 
 ## Placements for the other options
 
@@ -98,6 +105,24 @@ towards (6.58, 0.00) at 30°; B at (7.94, 7.48) facing towards (0.46, 0.00) at 2
 C at (7.34, 3.08) facing towards (2.59, 10.39) at 24°; D at (1.04, 4.18), beside
 tall furniture, facing towards (7.25, 10.39) at 16°.
 
+**F: move all four, from a longer search** (`move_all_long_search/layout_keep_none.jpg`;
+the same weights, 60 random starts instead of 30, seed 2):
+
+| Camera | Mount at (x, y), 2.5 m high | Face towards | Tilt down | Picture centre on the floor |
+|---|---|---|---|---|
+| A | (0.44, 8.28), left wall | (8.28, 7.45) | 30° | (4.75, 7.83) |
+| B | (1.04, 4.18), beside tall furniture; check it can take a mount | (7.94, 10.39) | 26° | (4.85, 7.61) |
+| C | (7.84, 5.98), right wall | (0.00, 0.19) | 28° | (4.06, 3.19) |
+| D | (7.34, 1.08), near the bottom-right | (0.00, 8.42) | 30° | (4.28, 4.14) |
+
+![Option F: move all four, longer search](move_all_long_search/layout_keep_none.jpg)
+
+Both E and F put two cameras on each long side of the room, 4–4.5 m apart and
+facing in crossing directions (one up the room, one down), so each covers the
+floor just below and behind its neighbour. Forcing the cameras at least 5 m apart
+gives about the same coverage as E; at least 6 m apart (one camera near each
+corner) leaves gaps and lowers both corners (the bottom-left corner to 45%).
+
 On the layout maps, white cameras stay where they are, magenta ones are new
 positions (any of the Yi cameras can go to any of them; each keeps its own lens
 file), and an outlined dot marks where a camera that moves is today. All
@@ -112,8 +137,8 @@ positions, directions and tilts are also in the `layout_plan.json` and
   change that is less ready to call a small, far-away person "standing". A short
   recording of someone seated at (8, 9) would show which part goes wrong.
 - The scan is a snapshot. Option B's two positions are on walls, but some others
-  are beside tall furniture (D in option E). Check every spot with the live camera
-  view before drilling.
+  are beside tall furniture (D in option E, B in option F). Check every spot with
+  the live camera view before drilling.
 
 ## Regenerate
 
@@ -122,6 +147,7 @@ W="--weight 4,8.5,8.3,10.4,8 --weight 3,2,8,10,2"
 python tools/coverage_planner.py $W --weight 0,1,4,2,2 --image-format jpg --out docs/coverage/priority/add_one
 python tools/layout_planner.py --variants $W --weight 0,1,4,2,2 --image-format jpg --out docs/coverage/priority/layout
 python tools/layout_planner.py --keep yi04 --keep yi05 $W --weight 0,1,4,2,4 --image-format jpg --out docs/coverage/priority/balanced
+python tools/layout_planner.py --seed 2 --restarts 60 $W --weight 0,1,4,2,2 --image-format jpg --out docs/coverage/priority/move_all_long_search
 ```
 
 (In zsh, write the `--weight` options out instead of using `$W`.) The per-area
