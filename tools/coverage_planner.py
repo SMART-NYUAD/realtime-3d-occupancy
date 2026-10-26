@@ -5,6 +5,7 @@ camera calibrations.
     python tools/coverage_planner.py --height 2.4 --top 8
     python tools/coverage_planner.py --posture seated      # desks only (or: standing)
     python tools/coverage_planner.py --focus 0,4,8,10      # only score this rectangle
+    python tools/coverage_planner.py --weight 4,8.5,8.3,10.4,4   # count this area 4x
     python tools/coverage_planner.py --spot 7.9,5.2 --spot 4,10.2   # only these spots
 
 Every floor spot (25 cm grid) is rated by how the cameras see a person there,
@@ -26,7 +27,8 @@ and ranked by the floor area that becomes "good". Writes to --out:
   coverage_candidates.png   the ranked mounting spots on today's coverage
   coverage_option_N.png     coverage with option N added
   coverage_plan.json        all numbers
-With --focus the maps still cover the whole room, with the scored areas outlined.
+With --focus or --weight the maps still cover the whole room, with those areas
+outlined. The m2 figures are plain floor area; weights only change the ranking.
 (--image-format jpg for smaller images). The saved lab results are in docs/coverage/.
 Map coordinates: meters from the scan's bottom-left corner, x to the right, y up,
 as on the tracker's map. The scan is a snapshot: furniture moved since then, or
@@ -89,7 +91,8 @@ def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=(),
     """Coverage map. `cameras` are drawn white; `new` (a camera, or a list of
     (camera, label)) magenta; `faded` cameras as an outlined dot only (e.g. where a
     camera that moves is today); `markers` are numbered (position, facing) pairs;
-    `outline` rectangles (x1, y1, x2, y2) mark the areas a --focus ranking scored."""
+    `outline` rectangles (x1, y1, x2, y2[, weight]) mark the areas a --focus
+    ranking scored or a --weight ranking weighted (labelled "x<weight>")."""
     bg = cv2.resize(plan.background(), None, fx=SCALE, fy=SCALE, interpolation=cv2.INTER_NEAREST)
     overlay = bg.copy()
     half = grid.cell / 2
@@ -100,9 +103,16 @@ def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=(),
         cv2.rectangle(overlay, to_px(plan, x - half, y + half), to_px(plan, x + half, y - half),
                       (90, 90, 90), -1)
     img = cv2.addWeighted(overlay, 0.55, bg, 0.45, 0)
-    for x1, y1, x2, y2 in outline:
-        cv2.rectangle(img, to_px(plan, min(x1, x2), max(y1, y2)), to_px(plan, max(x1, x2), min(y1, y2)),
-                      OUTLINE, 3)
+    for rect in outline:
+        x1, y1, x2, y2 = rect[:4]
+        corner = to_px(plan, min(x1, x2), max(y1, y2))
+        cv2.rectangle(img, corner, to_px(plan, max(x1, x2), min(y1, y2)), OUTLINE, 3)
+        if len(rect) > 4:
+            label = f"x{rect[4]:g}"
+            cv2.putText(img, label, (corner[0] + 6, corner[1] + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                        (0, 0, 0), 4)
+            cv2.putText(img, label, (corner[0] + 6, corner[1] + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                        OUTLINE, 2)
     for m in range(0, int(plan.width_m) + 1):                      # 1 m grid
         cv2.line(img, to_px(plan, m, 0), to_px(plan, m, plan.height_m), (200, 200, 200), 1)
         cv2.putText(img, str(m), (to_px(plan, m, 0)[0] - 4, to_px(plan, m, 0)[1] + 16),
@@ -157,7 +167,7 @@ def add_legend(img, title, outlined=False):
     rows = [(LABELS[s], COLOURS[s]) for s in (cov.GOOD, cov.POOR, cov.SINGLE, cov.UNSEEN)]
     rows.append(("desk / cabinet (not scored)", (90, 90, 90)))
     if outlined:
-        rows.append(("outlined: the areas the ranking scored", OUTLINE))
+        rows.append(("outlined: areas the ranking scored only, or weighted (x weight)", OUTLINE))
     panel = np.full((40 + 22 * len(rows), img.shape[1], 3), 245, np.uint8)
     cv2.putText(panel, title, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (20, 20, 20), 1, cv2.LINE_AA)
     for k, (text, colour) in enumerate(rows):
@@ -204,6 +214,9 @@ def main():
                     help="only try this mounting point x,y[,z] (repeatable)")
     ap.add_argument("--focus", action="append", type=lambda t: floats(t, (4,)),
                     help="only score floor inside x1,y1,x2,y2 (repeatable)")
+    ap.add_argument("--weight", action="append", type=lambda t: floats(t, (5,)),
+                    help="count floor inside x1,y1,x2,y2 w times when ranking (repeatable; "
+                         "overlaps take the largest weight, 1 elsewhere)")
     ap.add_argument("--include-furniture", action="store_true",
                     help="also score floor under desks and cabinets")
     ap.add_argument("--min-tilt", type=float, default=15.0,
@@ -221,7 +234,7 @@ def main():
     points = load_scan_points(cfg)
     occ = cov.Occupancy(points)
     furniture = None if args.include_furniture else cov.furniture_mask(points, plan)
-    grid = cov.FloorGrid(plan, args.cell, furniture=furniture, focus=args.focus)
+    grid = cov.FloorGrid(plan, args.cell, furniture=furniture, focus=args.focus, weights=args.weight)
     cameras, skipped = current_cameras(cfg)
     if skipped:
         print(f"[coverage] skipped (no lens or floor calibration): {', '.join(skipped)}")
@@ -236,7 +249,7 @@ def main():
     whole = planner if not args.focus else cov.Planner(
         cameras, cov.FloorGrid(plan, args.cell, furniture=furniture), occ, args.posture,
         args.min_angle, args.max_range)
-    outline = args.focus or ()
+    outline = list(args.focus or []) + list(args.weight or [])
     who = " and ".join(f"{p} people" for p in planner.postures)
     now = planner.summaries()
     print(f"[coverage] {grid.cell_area * len(grid.xy):.1f} m2 of floor scored for {who}, "
@@ -272,7 +285,8 @@ def main():
                                       outline=outline))
     report = {"postures": planner.postures, "mount_height_m": args.height,
               "min_angle_deg": args.min_angle, "max_range_m": args.max_range,
-              "cell_m": args.cell, "cameras": {c.name: [round(v, 3) for v in c.C] for c in cameras},
+              "cell_m": args.cell, "focus": args.focus, "weights": args.weight,
+              "cameras": {c.name: [round(v, 3) for v in c.C] for c in cameras},
               "today": now, "options": []}
     print(f"\nBest places for a new camera ({who}), best first:")
     for k, o in enumerate(options, 1):

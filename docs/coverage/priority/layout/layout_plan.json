@@ -10,22 +10,46 @@
   "min_tilt_deg": 15.0,
   "min_overlap_m2": 2.0,
   "min_separation_m": 1.0,
+  "focus": null,
+  "weights": [
+    [
+      4.0,
+      8.5,
+      8.3,
+      10.4,
+      8.0
+    ],
+    [
+      3.0,
+      2.0,
+      8.0,
+      10.0,
+      2.0
+    ],
+    [
+      0.0,
+      1.0,
+      4.0,
+      2.0,
+      2.0
+    ]
+  ],
   "today": {
     "seated": {
-      "floor_m2": 33.8,
-      "good_m2": 21.8,
-      "poor_angle_m2": 0.5,
-      "single_m2": 5.5,
-      "unseen_m2": 5.9,
-      "three_plus_m2": 14.5
+      "floor_m2": 62.9,
+      "good_m2": 28.8,
+      "poor_angle_m2": 5.1,
+      "single_m2": 9.9,
+      "unseen_m2": 19.1,
+      "three_plus_m2": 19.3
     },
     "standing": {
-      "floor_m2": 33.8,
-      "good_m2": 25.4,
-      "poor_angle_m2": 0.6,
-      "single_m2": 3.7,
-      "unseen_m2": 4.1,
-      "three_plus_m2": 22.3
+      "floor_m2": 62.9,
+      "good_m2": 35.8,
+      "poor_angle_m2": 3.6,
+      "single_m2": 7.9,
+      "unseen_m2": 15.7,
+      "three_plus_m2": 28.9
     }
   },
   "layouts": [
@@ -35,28 +59,28 @@
         "yi04",
         "yi05"
       ],
-      "score": 34.72,
+      "score": 107.89,
       "after": {
         "seated": {
-          "floor_m2": 33.8,
-          "good_m2": 25.9,
-          "poor_angle_m2": 0.3,
-          "single_m2": 3.3,
-          "unseen_m2": 4.2,
-          "three_plus_m2": 20.2
+          "floor_m2": 62.9,
+          "good_m2": 36.2,
+          "poor_angle_m2": 1.9,
+          "single_m2": 9.6,
+          "unseen_m2": 15.3,
+          "three_plus_m2": 29.2
         },
         "standing": {
-          "floor_m2": 33.8,
-          "good_m2": 28.5,
-          "poor_angle_m2": 0.1,
-          "single_m2": 2.2,
-          "unseen_m2": 3.0,
-          "three_plus_m2": 25.1
+          "floor_m2": 62.9,
+          "good_m2": 41.9,
+          "poor_angle_m2": 1.4,
+          "single_m2": 7.6,
+          "unseen_m2": 12.0,
+          "three_plus_m2": 34.6
         }
       },
       "good_gain_m2": {
-        "seated": 4.1,
-        "standing": 3.1
+        "seated": 7.4,
+        "standing": 6.1
       },
       "cameras": [
         {
@@ -112,15 +136,15 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            5.34,
-            9.98,
+            0.44,
+            7.78,
             2.5
           ],
-          "facing_deg": -75.0,
+          "facing_deg": -18.0,
           "tilt_down_deg": 30.0,
           "face_towards_m": [
-            8.02,
-            0.0
+            8.28,
+            5.23
           ]
         }
       ]
@@ -130,28 +154,28 @@
         "yi04",
         "yi05"
       ],
-      "score": 36.81,
+      "score": 118.84,
       "after": {
         "seated": {
-          "floor_m2": 33.8,
-          "good_m2": 27.2,
-          "poor_angle_m2": 0.2,
-          "single_m2": 4.2,
-          "unseen_m2": 2.1,
-          "three_plus_m2": 19.1
+          "floor_m2": 62.9,
+          "good_m2": 40.1,
+          "poor_angle_m2": 0.5,
+          "single_m2": 8.7,
+          "unseen_m2": 13.6,
+          "three_plus_m2": 29.9
         },
         "standing": {
-          "floor_m2": 33.8,
-          "good_m2": 30.2,
-          "poor_angle_m2": 0.0,
-          "single_m2": 2.6,
-          "unseen_m2": 0.9,
-          "three_plus_m2": 26.3
+          "floor_m2": 62.9,
+          "good_m2": 43.9,
+          "poor_angle_m2": 1.1,
+          "single_m2": 7.3,
+          "unseen_m2": 10.6,
+          "three_plus_m2": 35.6
         }
       },
       "good_gain_m2": {
-        "seated": 5.4,
-        "standing": 4.8
+        "seated": 11.3,
+        "standing": 8.1
       },
       "cameras": [
         {
@@ -191,15 +215,15 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            3.34,
-            9.98,
+            0.44,
+            8.28,
             2.5
           ],
-          "facing_deg": -63.0,
-          "tilt_down_deg": 28.0,
+          "facing_deg": -33.0,
+          "tilt_down_deg": 20.0,
           "face_towards_m": [
             8.28,
-            0.28
+            3.19
           ]
         },
         {
@@ -207,15 +231,15 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            7.24,
-            2.08,
+            7.74,
+            3.48,
             2.5
           ],
-          "facing_deg": 150.0,
+          "facing_deg": 126.0,
           "tilt_down_deg": 30.0,
           "face_towards_m": [
-            0.0,
-            6.26
+            2.72,
+            10.39
           ]
         }
       ]
@@ -224,28 +248,28 @@
       "keep": [
         "yi04"
       ],
-      "score": 38.41,
+      "score": 125.25,
       "after": {
         "seated": {
-          "floor_m2": 33.8,
-          "good_m2": 28.8,
-          "poor_angle_m2": 0.2,
-          "single_m2": 3.4,
-          "unseen_m2": 1.4,
-          "three_plus_m2": 18.1
+          "floor_m2": 62.9,
+          "good_m2": 44.9,
+          "poor_angle_m2": 0.6,
+          "single_m2": 5.7,
+          "unseen_m2": 11.8,
+          "three_plus_m2": 25.5
         },
         "standing": {
-          "floor_m2": 33.8,
-          "good_m2": 31.6,
-          "poor_angle_m2": 0.0,
-          "single_m2": 1.9,
-          "unseen_m2": 0.3,
-          "three_plus_m2": 25.7
+          "floor_m2": 62.9,
+          "good_m2": 48.6,
+          "poor_angle_m2": 0.4,
+          "single_m2": 3.9,
+          "unseen_m2": 9.9,
+          "three_plus_m2": 32.8
         }
       },
       "good_gain_m2": {
-        "seated": 7.0,
-        "standing": 6.2
+        "seated": 16.1,
+        "standing": 12.8
       },
       "cameras": [
         {
@@ -269,15 +293,15 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            3.34,
-            9.98,
+            0.44,
+            7.78,
             2.5
           ],
-          "facing_deg": -60.0,
-          "tilt_down_deg": 30.0,
+          "facing_deg": -30.0,
+          "tilt_down_deg": 15.0,
           "face_towards_m": [
             8.28,
-            1.42
+            3.25
           ]
         },
         {
@@ -285,15 +309,15 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            7.84,
-            5.98,
+            7.54,
+            4.48,
             2.5
           ],
-          "facing_deg": -131.6,
-          "tilt_down_deg": 28.0,
+          "facing_deg": 123.0,
+          "tilt_down_deg": 30.0,
           "face_towards_m": [
-            2.54,
-            0.0
+            3.7,
+            10.39
           ]
         },
         {
@@ -301,43 +325,43 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            7.24,
-            2.08,
+            7.94,
+            8.98,
             2.5
           ],
-          "facing_deg": 120.0,
-          "tilt_down_deg": 16.0,
+          "facing_deg": -150.0,
+          "tilt_down_deg": 26.0,
           "face_towards_m": [
-            2.44,
-            10.39
+            0.0,
+            4.39
           ]
         }
       ]
     },
     {
       "keep": [],
-      "score": 39.2,
+      "score": 130.5,
       "after": {
         "seated": {
-          "floor_m2": 33.8,
-          "good_m2": 29.3,
-          "poor_angle_m2": 0.1,
-          "single_m2": 3.1,
-          "unseen_m2": 1.3,
-          "three_plus_m2": 17.6
+          "floor_m2": 62.9,
+          "good_m2": 47.2,
+          "poor_angle_m2": 0.2,
+          "single_m2": 6.9,
+          "unseen_m2": 8.6,
+          "three_plus_m2": 22.4
         },
         "standing": {
-          "floor_m2": 33.8,
-          "good_m2": 32.6,
+          "floor_m2": 62.9,
+          "good_m2": 51.6,
           "poor_angle_m2": 0.0,
-          "single_m2": 0.8,
-          "unseen_m2": 0.3,
-          "three_plus_m2": 25.1
+          "single_m2": 4.8,
+          "unseen_m2": 6.6,
+          "three_plus_m2": 28.4
         }
       },
       "good_gain_m2": {
-        "seated": 7.5,
-        "standing": 7.2
+        "seated": 18.4,
+        "standing": 15.8
       },
       "cameras": [
         {
@@ -349,10 +373,10 @@
             9.98,
             2.5
           ],
-          "facing_deg": -69.0,
-          "tilt_down_deg": 24.0,
+          "facing_deg": -72.0,
+          "tilt_down_deg": 30.0,
           "face_towards_m": [
-            7.17,
+            6.58,
             0.0
           ]
         },
@@ -361,14 +385,14 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            7.84,
-            5.98,
+            7.94,
+            7.48,
             2.5
           ],
-          "facing_deg": -131.6,
-          "tilt_down_deg": 28.0,
+          "facing_deg": -135.0,
+          "tilt_down_deg": 22.0,
           "face_towards_m": [
-            2.54,
+            0.46,
             0.0
           ]
         },
@@ -377,15 +401,15 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            0.44,
-            6.78,
+            7.34,
+            3.08,
             2.5
           ],
-          "facing_deg": 0.0,
-          "tilt_down_deg": 20.0,
+          "facing_deg": 123.0,
+          "tilt_down_deg": 24.0,
           "face_towards_m": [
-            8.28,
-            6.78
+            2.59,
+            10.39
           ]
         },
         {
@@ -393,14 +417,14 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            7.24,
-            2.08,
+            1.04,
+            4.18,
             2.5
           ],
-          "facing_deg": 120.0,
-          "tilt_down_deg": 26.0,
+          "facing_deg": 45.0,
+          "tilt_down_deg": 16.0,
           "face_towards_m": [
-            2.44,
+            7.25,
             10.39
           ]
         }

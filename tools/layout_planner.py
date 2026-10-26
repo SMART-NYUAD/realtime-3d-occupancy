@@ -4,6 +4,7 @@ kept where they are), from the lab scan and the current calibrations.
     python tools/layout_planner.py                       # best 4 cameras, all free
     python tools/layout_planner.py --keep yi04 --keep yi05   # keep these, place the rest
     python tools/layout_planner.py --cameras 5
+    python tools/layout_planner.py --variants --weight 4,8.5,8.3,10.4,4   # count this area 4x
     python tools/layout_planner.py --variants            # best layout for every number
                                                          # of cameras kept in place
 
@@ -103,6 +104,9 @@ def main():
     ap.add_argument("--focus", action="append",
                     type=lambda t: [float(v) for v in t.split(",")],
                     help="only score floor inside x1,y1,x2,y2 (repeatable)")
+    ap.add_argument("--weight", action="append",
+                    type=lambda t: [float(v) for v in t.split(",")],
+                    help="count floor inside x1,y1,x2,y2 w times when ranking (repeatable)")
     ap.add_argument("--include-furniture", action="store_true")
     ap.add_argument("--image-format", choices=("png", "jpg"), default="png")
     args = ap.parse_args()
@@ -114,7 +118,9 @@ def main():
     points = load_scan_points(cfg)
     occ = cov.Occupancy(points)
     furniture = None if args.include_furniture else cov.furniture_mask(points, plan)
-    grid = cov.FloorGrid(plan, args.cell, furniture=furniture, focus=args.focus)
+    if any(len(w) != 5 for w in args.weight or []):
+        raise SystemExit("--weight takes x1,y1,x2,y2,w")
+    grid = cov.FloorGrid(plan, args.cell, furniture=furniture, focus=args.focus, weights=args.weight)
     cameras, skipped = current_cameras(cfg)
     if skipped:
         print(f"[layout] skipped (no lens or floor calibration): {', '.join(skipped)}")
@@ -163,6 +169,7 @@ def main():
               "mount_height_m": args.height, "min_angle_deg": args.min_angle,
               "max_range_m": args.max_range, "min_tilt_deg": args.min_tilt,
               "min_overlap_m2": args.min_overlap, "min_separation_m": args.min_separation,
+              "focus": args.focus, "weights": args.weight,
               "today": now, "layouts": []}
     both_note = "" if len(today.postures) == 1 else " (each spot: worse of seated / standing)"
     for cams, score, keep in keeps:
@@ -181,7 +188,7 @@ def main():
             drawn = today.worst(status)
         img = draw_map(plan, whole_grid, drawn, stay, title, new=moved,
                        faded=[c for c in cameras if c.name not in in_layout],
-                       outline=args.focus or ())
+                       outline=list(args.focus or []) + list(args.weight or []))
         cv2.imwrite(os.path.join(args.out, f"{name}.{args.image_format}"), img,
                     [cv2.IMWRITE_JPEG_QUALITY, 88] if args.image_format == "jpg" else [])
     with open(os.path.join(args.out, "layout_plan.json"), "w") as f:
