@@ -369,6 +369,23 @@ python track.py --headless 60           # no GUI for 60 s, snapshots every secon
 python track.py --headless 60 --save-dir ~/snaps
 python track.py --config other.yaml
 python track.py --log-csv walk.csv      # also log every per-camera + fused position
+python track.py --record-session recordings/day1   # also record keypoints (no video)
+```
+
+**Recording a day for later analysis.** `--record-session DIR` saves what every
+camera detects in every frame (boxes, body keypoints and each camera's tracker IDs,
+never video) while the tracker runs normally, split into 30-minute parts
+(`--record-part-minutes`). The folder also holds `recording.json` (times, cameras,
+code version, settings) and a copy of the calibration in use. Recording stops by
+itself, while tracking carries on, if the disk gets within 2 GB of full; a full day
+is roughly 1 to 4 GB. Replay it offline with any tracker settings or any subset of
+the cameras:
+
+```bash
+python tools/replay_tracking.py recordings/day1 --out day1_new.csv
+python tools/replay_tracking.py recordings/day1 --legacy --out day1_old.csv       # pre-October tracking
+python tools/replay_tracking.py recordings/day1 --cameras yi01,yi04,yi05 --out day1_3cams.csv
+python tools/tracking_metrics.py day1_new.csv
 ```
 
 At startup each camera prints its lens status: `on (...)`, `off (...)`, or
@@ -767,6 +784,7 @@ people_tracker_3d/
 │   ├── groundblob.py        floor trapezoids + convex intersection
 │   ├── fusion.py            cross-camera merge + global track lifecycle
 │   ├── plan.py              point-cloud → top-down world map
+│   ├── session_recorder.py  keypoint-only recording of live runs (--record-session)
 │   ├── coverage.py          camera coverage + camera placement searches
 │   ├── privacy.py           head masking from keypoints
 │   ├── render.py            floor map + camera mosaic drawing
@@ -780,13 +798,13 @@ people_tracker_3d/
 │   ├── coverage_planner.py  rate coverage, rank places for a new camera
 │   ├── layout_planner.py    best positions for the whole camera set
 │   ├── tracking_metrics.py  tracking quality from a --log-csv log
-│   ├── replay_tracking.py   replay a recorded session (fixes on / --legacy)
+│   ├── replay_tracking.py   replay a recording (fixes on / --legacy, --cameras subset)
 │   ├── simulate_busy_scene.py  old vs new tracking on a simulated scene
 │   └── topdown.py           render the world map to PNG
 │
 ├── calib/                   <cam>_homography.npy + .json sidecar, <cam>_intrinsics.json
 ├── data/                    smart_lab.las · reference_points.json · gs_lod2.sog
-├── tests/                   test_core · test_tracking · test_autocalib · test_coverage
+├── tests/                   test_core · test_tracking · test_autocalib · test_coverage · test_recording
 └── docs/
     ├── REVIEW.md            code review: bugs fixed, open issues, roadmap
     ├── AUTOCALIBRATION_PLAN.md
@@ -810,7 +828,7 @@ people_tracker_3d/
 | `python -m unittest discover -s tests -p 'test_autocalib.py' -v` | CPU-only synthetic rig and calibration workflow tests |
 | `python -m unittest tests/test_tracking.py -v` | Simulated-lab tracking tests: seated / hidden-ankle people, double dots, IDs, posture |
 | `python tools/tracking_metrics.py log.csv --expected N` | Tracking quality from a `track.py --log-csv` log (duplicates, ID births, seated jitter, continuity) |
-| `python tools/replay_tracking.py SESSION --out new.csv [--legacy]` | Replay a recorded session offline with the fixes on (or `--legacy` off) |
+| `python tools/replay_tracking.py SESSION --out new.csv [--legacy] [--cameras a,b,c]` | Replay a recording (a session, or a `--record-session` folder of parts) offline with the fixes on or off (`--legacy`), optionally with only some cameras |
 | `python tools/simulate_busy_scene.py [--seeds ...] [--miss 0.25]` | Old vs new tracking on a simulated scene (two seated people, one walker); reproduces the report figures |
 | `python tools/coverage_planner.py [--posture standing] [--spot x,y] [--weight x1,y1,x2,y2,w]` | Rate camera coverage from the lab scan and rank places for a new camera (weighted areas count more) |
 | `python tools/layout_planner.py [--keep yi04] [--variants] [--weight x1,y1,x2,y2,w]` | Best positions for all cameras at once (some kept in place, or none) |

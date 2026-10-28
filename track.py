@@ -8,6 +8,7 @@ Usage:
     python track.py [--config config.yaml]
     python track.py --headless 60 [--save-dir /tmp]   # no GUI, 60 s, snapshots
     python track.py --log-csv walk.csv                # also log every position
+    python track.py --record-session recordings/day1  # also record keypoints (no video)
 Keys (GUI): q = quit
 """
 import argparse
@@ -110,16 +111,23 @@ class Sources:
 
     def next(self):
         """(t, {cam: (key, frame)}). `key` changes only when the frame is new; `t` is
-        the capture time (synced) or wall time. Returns quickly when nothing arrives."""
+        the capture time (synced) or wall time. Returns quickly when nothing arrives.
+        `self.meta[cam]` then holds that frame's capture time, timestamp source,
+        reconnect generation and frame ID (for --record-session)."""
+        self.meta = {}
         if self.synced:
-            t, got = self.group.next_aligned(timeout=0.25)
-            return t, got
-        got = {}
+            t, got = self.group.next_aligned(timeout=0.25, with_metadata=True)
+            for n, (ct, _f, meta) in got.items():
+                self.meta[n] = {"t": ct, **meta}
+            return t, {n: (ct, f) for n, (ct, f, _m) in got.items()}
+        got, now = {}, time.time()
         for n, s in self.streams.items():
             seq, f = s.read()
             if f is not None:
                 got[n] = (seq, f)
-        return time.time(), got
+                self.meta[n] = {"t": now, "timestamp_source": "wall", "generation": 0,
+                                "frame_id": int(seq) if isinstance(seq, (int, float)) else 0}
+        return now, got
 
     def health_line(self):
         if not self.synced:
@@ -147,6 +155,11 @@ def main():
     ap.add_argument("--save-dir", default="/tmp")
     ap.add_argument("--log-csv", default=None,
                     help="write every per-camera and fused position to this CSV")
+    ap.add_argument("--record-session", default=None,
+                    help="also record every camera's keypoints (no video) to this new folder, "
+                         "for replaying with tools/replay_tracking.py")
+    ap.add_argument("--record-part-minutes", type=float, default=30.0,
+                    help="split the recording into parts of this many minutes")
     args = ap.parse_args()
     load_env()
     cfg = load_config(args.config)
@@ -173,6 +186,11 @@ def main():
     mqtt_pub.start()
     sources = Sources(cfg, cams)
     poslog = PositionLog(args.log_csv) if args.log_csv else None
+    recorder = None
+    if args.record_session:
+        from tracker3d.session_recorder import SessionRecorder
+        recorder = SessionRecorder(args.record_session, cams, cfg, args.record_part_minutes)
+        print(f"[record] recording keypoints (no video) to {args.record_session}")
 
     headless = args.headless > 0.0
     gui = ocfg.get("show_window", True) and not headless
@@ -202,6 +220,9 @@ def main():
                 for n, (people, raw) in detector.detect_and_track(new).items():
                     frame = new[n]
                     h, w = frame.shape[:2]
+                    if recorder is not None:
+                        meta = dict(sources.meta[n])
+                        recorder.frame(n, meta.pop("t"), (w, h), meta, people, raw)
                     proj = projs[n]
                     if proj is not None:
                         proj.set_frame_size(w, h)
@@ -278,6 +299,8 @@ def main():
     sources.release()
     if poslog is not None:
         poslog.close()
+    if recorder is not None:
+        recorder.close()
     mqtt_pub.stop()
     cv2.destroyAllWindows()
     cv2.waitKey(1)

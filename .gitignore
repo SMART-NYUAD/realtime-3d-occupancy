@@ -25,6 +25,9 @@ cameras.png
 coverage_plan/
 coverage_layout/
 
+# Live keypoint recordings (track.py --record-session); large, kept locally
+recordings/
+
 # YOLO / detector weights (large; auto-downloaded or built locally)
 *.pt
 *.onnx
