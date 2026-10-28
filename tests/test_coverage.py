@@ -161,6 +161,29 @@ class TestSearch(unittest.TestCase):
         self.assertAlmostEqual(both.cell_area, grid.cell_area / 2)
 
 
+class TestWeights(unittest.TestCase):
+    def test_weights_take_largest_and_change_the_ranking(self):
+        grid = cov.FloorGrid(_Plan(), 0.5, weights=[(0, 0, 3, 3, 2), (0, 0, 1, 1, 5)])
+        at = lambda x, y: grid.weight[np.argmin(np.hypot(*(grid.xy - [x, y]).T))]
+        self.assertEqual((at(0.75, 0.75), at(2.25, 2.25), at(5.25, 5.25)), (5.0, 2.0, 1.0))
+        status = np.array([cov.GOOD, cov.SINGLE, cov.UNSEEN])
+        self.assertAlmostEqual(cov.score(status, 1.0, 0.25, np.array([2.0, 4.0, 9.0])), 2 + 0.25 * 6)
+        # A heavily weighted corner pulls the best new camera towards covering it.
+        occ = cov.Occupancy(room_points())
+        existing = [camera_at([0.25, 0.25, 2.5], [3.0, 3.0, 0.8])]
+        spots = cov.mount_spots(_Plan(), occ, 2.5, spacing=0.75, avoid=[c.C for c in existing])
+        corner = (4.5, 4.5, 6.0, 6.0)
+        good_in_corner = []
+        for weights in (None, [corner + (20,)]):
+            grid = cov.FloorGrid(_Plan(), 0.5, weights=weights)
+            planner = cov.Planner(existing, grid, occ)
+            best = planner.search(LENS, spots, 2.5, top=1)[0]["camera"]
+            status, _, _ = planner.with_camera(best)
+            inside = (grid.xy[:, 0] >= 4.5) & (grid.xy[:, 1] >= 4.5)
+            good_in_corner.append(np.sum(status[inside] == cov.GOOD))
+        self.assertGreaterEqual(good_in_corner[1], good_in_corner[0])
+
+
 class TestLayoutSearch(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

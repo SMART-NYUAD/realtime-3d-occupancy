@@ -5,6 +5,11 @@ Results of `tools/coverage_planner.py` (where to add a fourth camera) and
 (yi01, yi04, yi05). Generated in October 2026 from the lab scan
 (`data/smart_lab.las`) and the calibration in `calib/`.
 
+This page scores the whole room. For options that fix the worst area today, the
+top strip from (4, 8.5) to (8.3, 10.4), while keeping the work area (3, 2) to
+(8, 10) and the corner (0, 1) to (4, 2) in view, see
+[`priority/`](priority/README.md).
+
 ## How to read the maps
 
 Every 25 cm square of floor is coloured by how the cameras see a person there:

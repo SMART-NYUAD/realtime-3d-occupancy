@@ -99,9 +99,11 @@ def furniture_mask(points, plan, z_band=(0.62, 0.88), res=0.05, min_size_m=0.35)
 class FloorGrid:
     """Floor spots to score: cell centres inside the room (at least edge_m from its
     edge) and, unless include_furniture, not on furniture. `focus` limits scoring to
-    rectangles [(x1, y1, x2, y2), ...], e.g. the desk area."""
+    rectangles [(x1, y1, x2, y2), ...], e.g. the desk area. `weights` makes some
+    areas count more when ranking: [(x1, y1, x2, y2, w), ...]; a spot takes the
+    largest weight of the rectangles it is in, and 1 outside them."""
 
-    def __init__(self, plan, cell=0.25, edge_m=0.2, furniture=None, focus=None):
+    def __init__(self, plan, cell=0.25, edge_m=0.2, furniture=None, focus=None, weights=None):
         xs = np.arange(cell / 2, plan.width_m, cell)
         ys = np.arange(cell / 2, plan.height_m, cell)
         X, Y = np.meshgrid(xs, ys)
@@ -122,6 +124,12 @@ class FloorGrid:
         self.cell = float(cell)
         self.xy = np.column_stack([X[ok], Y[ok]])
         self.furniture_xy = np.column_stack([X[self.on_furniture], Y[self.on_furniture]])
+        wt = np.full(len(self.xy), np.nan)
+        for x1, y1, x2, y2, w in weights or ():
+            inside = ((self.xy[:, 0] >= min(x1, x2)) & (self.xy[:, 0] <= max(x1, x2)) &
+                      (self.xy[:, 1] >= min(y1, y2)) & (self.xy[:, 1] <= max(y1, y2)))
+            wt[inside] = np.fmax(wt[inside], w)
+        self.weight = np.where(np.isnan(wt), 1.0, wt)
 
     def targets(self, posture="seated"):
         """(shoulder points, head points), each (N, 3)."""
@@ -232,9 +240,11 @@ def summary(status, count, cell_area):
             "unseen_m2": n(status == UNSEEN), "three_plus_m2": n(count >= 3)}
 
 
-def score(status, cell_area, seen_weight=0.25):
-    """Floor that is well covered, plus a little for floor that is at least seen."""
-    return cell_area * (np.sum(status == GOOD) + seen_weight * np.sum(status != UNSEEN))
+def score(status, cell_area, seen_weight=0.25, weights=None):
+    """Floor that is well covered, plus a little for floor that is at least seen
+    (each spot counted by its area weight, if given)."""
+    w = np.ones(len(status)) if weights is None else weights
+    return cell_area * (np.sum(w[status == GOOD]) + seen_weight * np.sum(w[status != UNSEEN]))
 
 
 def mount_spots(plan, occ, height, wall_gap=(0.15, 0.35), spacing=0.5, avoid=(), avoid_m=1.0):
@@ -292,6 +302,7 @@ class Planner:
         self.hd = np.vstack([hd for _, hd in targets])
         self.xy = np.tile(grid.xy, (len(self.postures), 1))
         self.cell_area = grid.cell_area / len(self.postures)
+        self.weights = np.tile(grid.weight, len(self.postures))
         self.seen = np.array([self._visible(c) for c in cameras], bool).reshape(len(cameras), len(self.xy))
         self.status, self.count = classify(self.seen, [c.C for c in cameras], self.xy, min_angle_deg)
 
@@ -393,7 +404,7 @@ class Planner:
         if not vis.any():
             return best
         status = self._fast_status(C, vis)
-        s = score(status, self.cell_area)
+        s = score(status, self.cell_area, weights=self.weights)
         if best is None or s > best["score"] + 1e-9:
             return {"C": C, "yaw": float(yaw), "tilt": float(tilt), "score": float(s), "clear": clear}
         return best
@@ -501,7 +512,8 @@ class LayoutSearch:
         if not self.valid(S):
             return -np.inf
         good, count = self._good_count(S)
-        return float(self.p.cell_area * (good.sum() + self.seen_weight * (count > 0).sum()))
+        w = self.p.weights
+        return float(self.p.cell_area * (w[good].sum() + self.seen_weight * w[count > 0].sum()))
 
     def add_scores(self, S):
         """Score of S plus each candidate, for every candidate (-inf where a rule fails)."""
@@ -510,7 +522,9 @@ class LayoutSearch:
         g = np.repeat(good[None], len(V), axis=0)
         for k in S:
             g |= V & self.vis[k] & self.angle_ok[self.pos, self.pos[k]]
-        sc = self.p.cell_area * (g.sum(axis=1) + self.seen_weight * (V | (count > 0)).sum(axis=1))
+        w = self.p.weights.astype(np.float32)
+        sc = self.p.cell_area * (g.astype(np.float32) @ w
+                                 + self.seen_weight * ((V | (count > 0)).astype(np.float32) @ w))
         ok = np.ones(len(V), bool)
         for k in S:
             ok &= self.dist[self.pos, self.pos[k]] >= self.min_separation_m
@@ -602,7 +616,8 @@ class LayoutSearch:
                     todo.append(b)
         if len(seen) < len(cams):
             return -np.inf
-        return float(self.p.cell_area * (good.sum() + self.seen_weight * (count > 0).sum()))
+        w = self.p.weights
+        return float(self.p.cell_area * (w[good].sum() + self.seen_weight * w[count > 0].sum()))
 
     def refine(self, cams, passes=2):
         """Finer direction and tilt for each camera that moves (current cameras that

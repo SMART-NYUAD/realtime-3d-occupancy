@@ -4,6 +4,7 @@ kept where they are), from the lab scan and the current calibrations.
     python tools/layout_planner.py                       # best 4 cameras, all free
     python tools/layout_planner.py --keep yi04 --keep yi05   # keep these, place the rest
     python tools/layout_planner.py --cameras 5
+    python tools/layout_planner.py --variants --weight 4,8.5,8.3,10.4,4   # count this area 4x
     python tools/layout_planner.py --variants            # best layout for every number
                                                          # of cameras kept in place
 
@@ -20,7 +21,8 @@ needs it), and cameras stay --min-separation m apart.
 kept, and reports the best of each, so moving cameras can be weighed against the
 work it takes (new mounts and a calibration walk for every moved camera).
 
-Writes to --out: layout_keep_<names>.png per layout and layout_plan.json. The scan
+Writes to --out: layout_keep_<names>.png per layout and layout_plan.json; with
+--focus the maps still cover the whole room, with the scored areas outlined. The scan
 is a snapshot; check spots with the live camera view before mounting.
 """
 import argparse
@@ -72,7 +74,7 @@ def layout_report(plan, search, planner, cams, keep, now, score):
             "label": label, "current_camera": c["name"], "kept": bool(c["name"] in keep),
             "position_m": [round(float(v), 2) for v in C], "facing_deg": round(c["yaw"], 1),
             "tilt_down_deg": round(c["tilt"], 1),
-            "face_towards_m": [round(float(v), 2) for v in far_side(plan, C, c["yaw"]) + 0.0]})
+            "face_towards_m": [float(v) for v in far_side(plan, C, c["yaw"]).round(2) + 0.0]})
     return {"keep": list(keep), "score": round(score, 2), "after": after,
             "good_gain_m2": {p: round(after[p]["good_m2"] - now[p]["good_m2"], 1) for p in after},
             "cameras": record}, labels, status
@@ -102,6 +104,9 @@ def main():
     ap.add_argument("--focus", action="append",
                     type=lambda t: [float(v) for v in t.split(",")],
                     help="only score floor inside x1,y1,x2,y2 (repeatable)")
+    ap.add_argument("--weight", action="append",
+                    type=lambda t: [float(v) for v in t.split(",")],
+                    help="count floor inside x1,y1,x2,y2 w times when ranking (repeatable)")
     ap.add_argument("--include-furniture", action="store_true")
     ap.add_argument("--image-format", choices=("png", "jpg"), default="png")
     args = ap.parse_args()
@@ -113,7 +118,9 @@ def main():
     points = load_scan_points(cfg)
     occ = cov.Occupancy(points)
     furniture = None if args.include_furniture else cov.furniture_mask(points, plan)
-    grid = cov.FloorGrid(plan, args.cell, furniture=furniture, focus=args.focus)
+    if any(len(w) != 5 for w in args.weight or []):
+        raise SystemExit("--weight takes x1,y1,x2,y2,w")
+    grid = cov.FloorGrid(plan, args.cell, furniture=furniture, focus=args.focus, weights=args.weight)
     cameras, skipped = current_cameras(cfg)
     if skipped:
         print(f"[layout] skipped (no lens or floor calibration): {', '.join(skipped)}")
@@ -126,6 +133,8 @@ def main():
 
     today = cov.Planner(cameras, grid, occ, args.posture, args.min_angle, args.max_range)
     now = today.summaries()
+    # Maps always show the whole room; with --focus the scored areas are outlined.
+    whole_grid = grid if not args.focus else cov.FloorGrid(plan, args.cell, furniture=furniture)
     empty = cov.Planner([], grid, occ, args.posture, args.min_angle, args.max_range)
     spots = cov.mount_spots(plan, occ, args.height)
     print(f"[layout] scoring candidates at {len(spots)} mounting spots plus today's "
@@ -160,6 +169,7 @@ def main():
               "mount_height_m": args.height, "min_angle_deg": args.min_angle,
               "max_range_m": args.max_range, "min_tilt_deg": args.min_tilt,
               "min_overlap_m2": args.min_overlap, "min_separation_m": args.min_separation,
+              "focus": args.focus, "weights": args.weight,
               "today": now, "layouts": []}
     both_note = "" if len(today.postures) == 1 else " (each spot: worse of seated / standing)"
     for cams, score, keep in keeps:
@@ -170,8 +180,15 @@ def main():
         moved = [(cam, label) for cam, label in labels if label not in names]
         name = "layout_keep_" + ("+".join(keep) if keep else "none")
         title = f"{args.cameras} cameras, keeping {', '.join(keep) or 'none'}{both_note}"
-        img = draw_map(plan, grid, today.worst(status), stay, title, new=moved,
-                       faded=[c for c in cameras if c.name not in in_layout])
+        if args.focus:
+            whole = cov.Planner([c["camera"] for c in cams], whole_grid, occ, args.posture,
+                                args.min_angle, args.max_range)
+            drawn = whole.worst()
+        else:
+            drawn = today.worst(status)
+        img = draw_map(plan, whole_grid, drawn, stay, title, new=moved,
+                       faded=[c for c in cameras if c.name not in in_layout],
+                       outline=list(args.focus or []) + list(args.weight or []))
         cv2.imwrite(os.path.join(args.out, f"{name}.{args.image_format}"), img,
                     [cv2.IMWRITE_JPEG_QUALITY, 88] if args.image_format == "jpg" else [])
     with open(os.path.join(args.out, "layout_plan.json"), "w") as f:
