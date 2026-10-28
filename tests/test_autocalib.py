@@ -350,6 +350,28 @@ class CalibrationTests(unittest.TestCase):
         self.assertFalse(unmeasured["absolute_accuracy_measured"])
         strict = validate(anchored, self.validation_session, cfg, None)
         self.assertIn("supply independent measured floor checkpoints", strict["reasons"])
+        self.assertEqual(anchored["anchor"]["placed_by_rig_only"], [])
+
+    def test_anchor_from_current_with_a_new_camera(self):
+        """A camera just added has no floor calibration yet. The cameras that have
+        one place the rig, and the walk places the new camera with them."""
+        from copy import deepcopy
+        from tracker3d.autocalib.anchor import anchor_from_current
+        from tracker3d.geometry import save_calibration
+        cfg = deepcopy(self.cfg)
+        for c in cfg["cameras"]:
+            path = self.base / f"{c['name']}_old.npy"
+            if c["name"] != "c":
+                R, C = self.poses[c["name"]]
+                save_calibration(str(path), floor_homography(self.lens, R, C), self.lens.image_size,
+                                 lens=LensModel.load(c["intrinsics_file"]))
+            c["homography_file"] = str(path)
+        anchored = anchor_from_current(self.rig, self.session, cfg)
+        self.assertEqual(anchored["anchor"]["placed_by_rig_only"], ["c"])
+        self.assertEqual(set(anchored["anchor"]["residual_by_camera_m"]), {"a", "b"})
+        report = validate(anchored, self.validation_session, cfg, self.checks[:5])
+        self.assertTrue(report["passed"], report["reasons"])
+        self.assertLess(report["absolute_error_m"]["max"], 0.06)
 
     def test_robust_solve_with_pose_outliers(self):
         samples = deepcopy(self.samples)

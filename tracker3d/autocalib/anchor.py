@@ -1,5 +1,6 @@
 """One similarity transform attaches every camera to the existing map frame."""
 import hashlib
+import os
 from pathlib import Path
 
 import numpy as np
@@ -142,23 +143,26 @@ def current_calibration_pairs(rig, session, cfg):
     beneath it is projected into each camera that saw the walker, and the
     camera's CURRENT calibration maps that pixel to the map. No tape measuring:
     the new rig inherits the existing map placement, averaged over hundreds of
-    points and all cameras."""
+    points and all cameras. A camera with no calibration yet (one just added)
+    adds no points; the rig places it from the others."""
     from tracker3d.geometry import FloorProjector
     from tracker3d.lens import load_lens
     from .observations import prepare
     from .solve import intersect_plane, project_raw, rig_geometry
 
     poses, lenses = rig_geometry(rig)
+    if {c["name"] for c in cfg["cameras"]} != set(poses):
+        raise ValueError("configured cameras differ from the solved rig")
     current = {}
     for c in cfg["cameras"]:
+        if not os.path.exists(c["homography_file"]):
+            continue        # a newly added camera: the rig places it, it adds no points
         lens, _ = load_lens(c)
         proj = FloorProjector.load(c["homography_file"], lens)
         size = lens.image_size if lens is not None else tuple(
             rig["cameras"][c["name"]]["lens"]["image_size"])
         proj.set_frame_size(*size)
         current[c["name"]] = (proj, size)
-    if set(current) != set(poses):
-        raise ValueError("configured cameras differ from the solved rig")
     samples, _, _ = prepare(session, **rig["sampling"])
     ankle_z = rig["body"]["ankle_z"]
     pairs = []
@@ -173,6 +177,8 @@ def current_calibration_pairs(rig, session, cfg):
             continue
         xy = np.median(list(feet.values()), axis=0)
         for n in feet:
+            if n not in current:
+                continue
             px, depth = project_raw(lenses[n], *poses[n], np.array([[xy[0], xy[1], 0.0]]))
             proj, (w, h) = current[n]
             u, v = px[0]
@@ -212,6 +218,7 @@ def anchor_from_current(rig, session, cfg, trim=3.0):
     per_camera = {n: statistics(res[keep & np.array([p[2] == n for p in pairs])]) for n in sorted(cams)}
     return _anchored(rig, S, identity, [], [float(np.median(res[keep]))],
                      {"method": "current_calibration", "points_used": int(keep.sum()),
+                      "placed_by_rig_only": sorted(set(rig["cameras"]) - cams),
                       "points_total": len(pairs),
                       "residual_m": statistics(res[keep]), "residual_by_camera_m": per_camera,
                       "note": "absolute placement inherits the current calibration; "

@@ -357,7 +357,28 @@ time; drag points until your dot lands on your true spot **and** the cameras agr
    number of cameras (re-export the engine with `tools/export_engine.py --batch N`
    if it is not).
 5. **Redo the calibration walk** with all cameras (`autocalib.py`, see above) so
-   the new camera joins the shared calibration.
+   the new camera joins the shared calibration. If the cameras that were already
+   there have not moved, no tape measuring is needed: `anchor --from-current` places
+   the walk on the map with their current calibrations, and the new camera, which
+   has no floor calibration yet, is placed by the walk along with them:
+
+   ```bash
+   python autocalib.py record --out calib/walks/cal_4cam --seconds 150
+   python autocalib.py solve  --session calib/walks/cal_4cam --out calib/rig_4cam.json
+   python autocalib.py anchor --rig calib/rig_4cam.json --from-current \
+     --session calib/walks/cal_4cam --out calib/anchored_4cam.json
+   python autocalib.py record --out calib/walks/check_4cam --seconds 120   # second, independent walk
+   python autocalib.py validate --rig calib/anchored_4cam.json --session calib/walks/check_4cam \
+     --no-checkpoints --out calib/report_4cam.json
+   python autocalib.py export --rig calib/anchored_4cam.json --report calib/report_4cam.json \
+     --out calib/candidates/4cam
+   python track.py --config calib/candidates/4cam/config.yaml              # try it (MQTT off)
+   ```
+
+   A camera that was moved has a wrong floor calibration: move its
+   `calib/<name>_homography.*` aside first so it is treated as new. At least two
+   cameras must keep a current calibration; if fewer stayed put, anchor on measured
+   floor marks instead (`anchor --points`, see the autocalibration doc).
 
 ---
 
