@@ -9,6 +9,7 @@ Usage:
     python track.py --headless 60 [--save-dir /tmp]   # no GUI, 60 s, snapshots
     python track.py --log-csv walk.csv                # also log every position
     python track.py --record-session recordings/day1  # also record keypoints (no video)
+    python track.py --record-session recordings/day1 --record-video   # ... and video
 Keys (GUI): q = quit
 """
 import argparse
@@ -160,7 +161,15 @@ def main():
                          "for replaying with tools/replay_tracking.py")
     ap.add_argument("--record-part-minutes", type=float, default=30.0,
                     help="split the recording into parts of this many minutes")
+    ap.add_argument("--record-video", action="store_true",
+                    help="with --record-session: also record each camera's video")
+    ap.add_argument("--record-video-width", type=int, default=960,
+                    help="video width in pixels (0 = full camera resolution)")
+    ap.add_argument("--record-video-fps", type=float, default=10.0,
+                    help="video frames per second per camera")
     args = ap.parse_args()
+    if args.record_video and not args.record_session:
+        ap.error("--record-video needs --record-session DIR")
     load_env()
     cfg = load_config(args.config)
     if cfg.get("autocalibration"):
@@ -189,8 +198,12 @@ def main():
     recorder = None
     if args.record_session:
         from tracker3d.session_recorder import SessionRecorder
-        recorder = SessionRecorder(args.record_session, cams, cfg, args.record_part_minutes)
-        print(f"[record] recording keypoints (no video) to {args.record_session}")
+        video = ({"width": args.record_video_width, "fps": args.record_video_fps}
+                 if args.record_video else None)
+        recorder = SessionRecorder(args.record_session, cams, cfg, args.record_part_minutes,
+                                   video=video)
+        print(f"[record] recording keypoints{' and video' if video else ' (no video)'} "
+              f"to {args.record_session}")
 
     headless = args.headless > 0.0
     gui = ocfg.get("show_window", True) and not headless
@@ -222,7 +235,7 @@ def main():
                     h, w = frame.shape[:2]
                     if recorder is not None:
                         meta = dict(sources.meta[n])
-                        recorder.frame(n, meta.pop("t"), (w, h), meta, people, raw)
+                        recorder.frame(n, meta.pop("t"), (w, h), meta, people, raw, image=frame)
                     proj = projs[n]
                     if proj is not None:
                         proj.set_frame_size(w, h)

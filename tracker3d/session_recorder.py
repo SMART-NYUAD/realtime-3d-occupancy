@@ -13,6 +13,9 @@ day can be replayed part by part without loading it all into memory:
 tools/replay_tracking.py replays DIR (all parts in order) with any tracker
 settings and any subset of the cameras. Recording stops (tracking carries on)
 when free disk space falls below `min_free_gb`.
+
+With `video` ({"width": 960, "fps": 10}), each part also gets one video per
+camera and the capture time of every video frame (tracker3d/video_recorder.py).
 """
 import json
 import shutil
@@ -40,7 +43,7 @@ def _jsonable(value):
 
 
 class SessionRecorder:
-    def __init__(self, root, cams, cfg, part_minutes=30.0, min_free_gb=2.0):
+    def __init__(self, root, cams, cfg, part_minutes=30.0, min_free_gb=2.0, video=None):
         self.root = Path(root)
         if self.root.exists():
             raise ValueError(f"{self.root} already exists; record each run to a new folder")
@@ -71,6 +74,13 @@ class SessionRecorder:
                      "part_minutes": float(part_minutes), "git_commit": _git_commit(),
                      "config": _jsonable(cfg), "parts": [], "frames": 0, "stopped_early": None}
         self.writer, self.frames, self.stopped = None, 0, False
+        self.video = None
+        if video:
+            from tracker3d.video_recorder import VideoRecorder
+            self.video = VideoRecorder(list(self.snapshots), video.get("width", 960),
+                                       video.get("fps", 10.0))
+            self.info["video"] = {"codec": self.video.fourcc, "width": self.video.width,
+                                  "fps": self.video.fps}
         self._last_disk_check = float("-inf")     # check on the first frame, then every minute
         self._open_part()
 
@@ -86,14 +96,18 @@ class SessionRecorder:
 
     def _stop(self, reason):
         self.writer.close(complete=True)
+        if self.video is not None:
+            self.info["video"] = self.video.close()
+            self.video = None
         self.stopped = True
         self.info["stopped_early"] = reason
         self._save_info()
         print(f"[record] stopped recording ({reason}); tracking continues", flush=True)
 
-    def frame(self, cam, t, image_size, meta, tracked, raw):
+    def frame(self, cam, t, image_size, meta, tracked, raw, image=None):
         """Write one camera frame: every raw box with its keypoints, and the camera
-        tracker's ID for the boxes it tracks (None for the others)."""
+        tracker's ID for the boxes it tracks (None for the others). With video on,
+        `image` (the camera frame) goes to that camera's video."""
         if self.stopped:
             return
         now = time.monotonic()
@@ -118,10 +132,15 @@ class SessionRecorder:
                             "image_size": [int(image_size[0]), int(image_size[1])],
                             **meta, "people": people})
         self.frames += 1
+        if self.video is not None and image is not None:
+            self.video.push(cam, self.writer.path, t, meta, image)
 
     def close(self):
         if not self.stopped and self.writer is not None:
             self.writer.close(complete=True)
+        if self.video is not None:
+            self.info["video"] = self.video.close()
+            self.video = None
         self.info.update(ended_utc=datetime.now(timezone.utc).isoformat(), frames=self.frames)
         self._save_info()
         print(f"[record] {self.frames} camera frames in {len(self.info['parts'])} part(s) "

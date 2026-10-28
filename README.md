@@ -370,6 +370,7 @@ python track.py --headless 60 --save-dir ~/snaps
 python track.py --config other.yaml
 python track.py --log-csv walk.csv      # also log every per-camera + fused position
 python track.py --record-session recordings/day1   # also record keypoints (no video)
+python track.py --record-session recordings/day1 --record-video   # ... and each camera's video
 ```
 
 **Recording a day for later analysis.** `--record-session DIR` saves what every
@@ -378,8 +379,23 @@ never video) while the tracker runs normally, split into 30-minute parts
 (`--record-part-minutes`). The folder also holds `recording.json` (times, cameras,
 code version, settings) and a copy of the calibration in use. Recording stops by
 itself, while tracking carries on, if the disk gets within 2 GB of full; a full day
-is roughly 1 to 4 GB. Replay it offline with any tracker settings or any subset of
-the cameras:
+is roughly 1 to 4 GB.
+
+**Video (with permission).** `--record-video` also saves each camera's video into
+the same parts (`part_0001/video/yi01.mp4`), with the capture time of every video
+frame in `yi01_frames.csv`, on the same clock as the keypoints, so a video frame
+can be matched to what the tracker did at that moment. Frames are scaled to
+`--record-video-width` pixels across (default 960; 0 = full size) and kept at
+`--record-video-fps` per camera (default 10). Each camera is encoded in its own
+background thread, so tracking never waits: if encoding falls behind, frames are
+left out of the video and counted in `recording.json`. The codec is the first of
+H.264, MPEG-4 and Motion JPEG that the OpenCV build supports (printed at start).
+Four cameras at the defaults take roughly 15 to 25 GB a day (check the first test
+recording with `du -sh`); full size at 15 frames/s is several times more. The video
+shows people's faces: keep it on the Thor or approved storage only (`recordings/`
+is not tracked by git).
+
+Replay a recording offline with any tracker settings or any subset of the cameras:
 
 ```bash
 python tools/replay_tracking.py recordings/day1 --out day1_new.csv
@@ -784,7 +800,8 @@ people_tracker_3d/
 │   ├── groundblob.py        floor trapezoids + convex intersection
 │   ├── fusion.py            cross-camera merge + global track lifecycle
 │   ├── plan.py              point-cloud → top-down world map
-│   ├── session_recorder.py  keypoint-only recording of live runs (--record-session)
+│   ├── session_recorder.py  recording of live runs (--record-session): keypoints per part
+│   ├── video_recorder.py    optional per-camera video for a recording (--record-video)
 │   ├── coverage.py          camera coverage + camera placement searches
 │   ├── privacy.py           head masking from keypoints
 │   ├── render.py            floor map + camera mosaic drawing

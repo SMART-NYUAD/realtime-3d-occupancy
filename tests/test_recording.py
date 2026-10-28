@@ -64,13 +64,14 @@ class RecordingTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def record(self, root, seconds=30.0, part_minutes=0.25, fps=10, disk_free=1e12):
+    def record(self, root, seconds=30.0, part_minutes=0.25, fps=10, disk_free=1e12, video=None):
         """Simulate a live run: every camera sees one seated person at SEAT."""
         clock, rng = Clock(), np.random.default_rng(3)
         usage = mock.Mock(free=disk_free)
+        image = np.random.default_rng(4).integers(0, 255, (108, 192, 3), dtype=np.uint8)
         with mock.patch.object(session_recorder.time, "monotonic", clock), \
                 mock.patch.object(session_recorder.shutil, "disk_usage", return_value=usage):
-            rec = session_recorder.SessionRecorder(root, self.cams, self.cfg, part_minutes)
+            rec = session_recorder.SessionRecorder(root, self.cams, self.cfg, part_minutes, video=video)
             for k in range(int(seconds * fps)):
                 clock.t = k / fps
                 for ci, cam in enumerate(POSES):
@@ -79,7 +80,8 @@ class RecordingTests(unittest.TestCase):
                            {"bbox": (5.0, 5.0, 40.0, 90.0), "conf": 0.3, "kxy": None, "kconf": None}]
                     tracked = [{"bbox": d["bbox"], "id": 7}]
                     rec.frame(cam, 1000.0 + k / fps + 0.01 * ci, (W, H),
-                              {"timestamp_source": "ntp", "generation": 0, "frame_id": k}, tracked, raw)
+                              {"timestamp_source": "ntp", "generation": 0, "frame_id": k}, tracked, raw,
+                              image=image)
             rec.close()
         return rec
 
@@ -143,6 +145,56 @@ class RecordingTests(unittest.TestCase):
         self.assertEqual(replay.recorded_cameras(str(root)), set(POSES))
         with self.assertRaises(SystemExit):
             replay.replay(str(root), self.cfg, str(self.tmp_path / "bad.csv"), cameras=["yi09"])
+
+    def test_video_follows_the_parts_with_frame_times(self):
+        import cv2
+        root = self.tmp_path / "video_day"
+        self.record(root, seconds=30.0, part_minutes=0.25, fps=10, video={"width": 96, "fps": 5})
+        info = json.loads((root / "recording.json").read_text())
+        total = 0
+        for part in ("part_0001", "part_0002"):
+            for cam in POSES:
+                video_dir = root / part / "video"
+                clip = next(video_dir.glob(f"{cam}.*"))
+                with open(video_dir / f"{cam}_frames.csv") as f:
+                    rows = list(csv.DictReader(f))
+                self.assertAlmostEqual(len(rows), 15 * 5, delta=2)       # 15 s part at 5 frames/s
+                times = [float(r["t"]) for r in rows]
+                self.assertEqual(times, sorted(times))
+                self.assertEqual(rows[0]["timestamp_source"], "ntp")
+                cap = cv2.VideoCapture(str(clip))
+                ok, frame = cap.read()
+                n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.release()
+                self.assertTrue(ok)
+                self.assertEqual(frame.shape[1], 96)
+                self.assertAlmostEqual(n, len(rows), delta=1)
+                total += len(rows)
+        cams = info["video"]["cameras"]
+        self.assertEqual(sum(c["frames"] for c in cams.values()), total)
+        self.assertTrue(all(c["dropped_queue_full"] == 0 and c["error"] is None for c in cams.values()))
+
+    def test_video_rate_and_full_queue(self):
+        from tracker3d import video_recorder
+        rec = video_recorder.VideoRecorder.__new__(video_recorder.VideoRecorder)
+        rec.width, rec.fps = 0, 10.0
+        worker = video_recorder._CameraVideo("yi01", "MJPG", ".avi", 10.0, queue_size=1000)
+        rec.workers, rec.next_due, rec.skipped = {"yi01": worker}, {"yi01": None}, {"yi01": 0}
+        frame = np.zeros((8, 8, 3), np.uint8)
+        for k in range(170):                        # 10 s from a 17 frames/s camera
+            rec.push("yi01", "/tmp/x", 100.0 + k / 17.0, {}, frame)
+        self.assertAlmostEqual(worker.q.qsize(), 100, delta=2)    # kept at 10 frames/s
+        full = video_recorder._CameraVideo("yi04", "MJPG", ".avi", 10.0, queue_size=1)
+        for _ in range(3):
+            full.push(("/tmp/x", 0.0, {}, frame))
+        self.assertEqual(full.dropped, 2)               # tracking never waits for the encoder
+
+    def test_record_video_needs_a_session(self):
+        import subprocess
+        r = subprocess.run([sys.executable, "track.py", "--record-video"], cwd=ROOT,
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--record-session", r.stderr)
 
     def test_track_sources_report_frame_metadata(self):
         sys.argv = ["track.py"]
