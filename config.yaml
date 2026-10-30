@@ -25,6 +25,12 @@ cameras:
     source: "rtsp://192.168.50.68/ch0_0.h264"
     homography_file: "calib/yi05_homography.npy"
     intrinsics_file: "calib/yi05_intrinsics.json"
+  # Fourth camera (October 2026). Until its lens calibration and the calibration
+  # walk are done it appears in the camera window but adds nothing to the map.
+  - name: yi06
+    source: "rtsp://192.168.50.143/ch0_0.h264"
+    homography_file: "calib/yi06_homography.npy"
+    intrinsics_file: "calib/yi06_intrinsics.json"
 
 # Defaults applied to every camera (override per-camera by adding the key above).
 camera_defaults:

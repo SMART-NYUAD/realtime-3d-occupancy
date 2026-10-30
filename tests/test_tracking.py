@@ -8,6 +8,7 @@ Each fix is checked against the old behaviour on the same scene:
 
 Run:  python -m unittest tests/test_tracking.py -v
 """
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -159,13 +160,18 @@ class TrackingTests(unittest.TestCase):
         from tracker3d.config import list_cameras, load_config
         from tracker3d.lens import load_lens
         cfg = load_config(str(ROOT / "config.yaml"))
+        checked = 0
         for c in list_cameras(cfg):
             c = {**c, "homography_file": str(ROOT / c["homography_file"]),
                  "intrinsics_file": str(ROOT / c["intrinsics_file"])}
+            if not os.path.exists(c["homography_file"]):
+                continue                    # a camera added but not calibrated yet
+            checked += 1
             lens, _ = load_lens(c)
             proj = FloorProjector.load(c["homography_file"], lens)
             proj.set_frame_size(*lens.image_size)
             self.assertTrue(2.0 < proj.pose()[2][2] < 2.9, c["name"])
+        self.assertGreaterEqual(checked, 3)
 
     def test_seated_hidden_legs_localized_from_shoulders(self):
         """Legs hidden by a desk: the old foot guess is biased differently per camera;
