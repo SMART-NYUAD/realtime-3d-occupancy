@@ -813,7 +813,7 @@ people_tracker_3d/
 | `python tools/replay_tracking.py SESSION --out new.csv [--legacy]` | Replay a recorded session offline with the fixes on (or `--legacy` off) |
 | `python tools/simulate_busy_scene.py [--seeds ...] [--miss 0.25]` | Old vs new tracking on a simulated scene (two seated people, one walker); reproduces the report figures |
 | `python tools/coverage_planner.py [--posture standing] [--spot x,y] [--weight x1,y1,x2,y2,w]` | Rate camera coverage from the lab scan and rank places for a new camera (weighted areas count more) |
-| `python tools/layout_planner.py [--keep yi04] [--variants] [--weight x1,y1,x2,y2,w]` | Best positions for all cameras at once (some kept in place, or none) |
+| `python tools/layout_planner.py [--keep yi04] [--variants] [--weight x1,y1,x2,y2,w] [--no-mount x1,y1,x2,y2] [--add-spot x,y,h]` | Best positions for all cameras at once (some kept in place, or none), with walls ruled out or extra spots at other heights |
 | `python -m unittest tests/test_coverage.py -v` | Coverage planner tests (visibility, blocking, angles, search, scan alignment) |
 
 ---

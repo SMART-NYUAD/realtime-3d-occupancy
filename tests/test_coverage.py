@@ -307,6 +307,23 @@ class TestRealScan(unittest.TestCase):
             self.assertEqual(len(cams), 4)
             self.assertEqual(sum(c["kept"] for c in cams), 3)
 
+    def test_layout_cli_no_mount_and_added_spot(self):
+        """With every wall spot ruled out, the new camera goes on the one spot added,
+        at that spot's own height (e.g. on top of a cabinet)."""
+        with tempfile.TemporaryDirectory() as out:
+            r = subprocess.run([sys.executable, "tools/layout_planner.py", "--out", out,
+                                "--restarts", "1", "--keep", "yi01", "--keep", "yi04",
+                                "--keep", "yi05", "--no-mount=-1,-1,10,12",
+                                "--add-spot", "7.9,8.1,2.0"],
+                               cwd=ROOT, capture_output=True, text=True, timeout=300)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(os.path.join(out, "layout_plan.json")) as f:
+                plan = json.load(f)
+            new = [c for c in plan["layouts"][0]["cameras"] if not c["kept"]]
+            self.assertEqual(len(new), 1)
+            self.assertEqual(new[0]["position_m"], [7.9, 8.1, 2.0])
+            self.assertEqual(plan["added_spots"], [[7.9, 8.1, 2.0]])
+
 
 if __name__ == "__main__":
     unittest.main()

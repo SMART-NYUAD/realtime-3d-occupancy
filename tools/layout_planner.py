@@ -7,6 +7,8 @@ kept where they are), from the lab scan and the current calibrations.
     python tools/layout_planner.py --variants --weight 4,8.5,8.3,10.4,4   # count this area 4x
     python tools/layout_planner.py --variants            # best layout for every number
                                                          # of cameras kept in place
+    python tools/layout_planner.py --no-mount 0,3,1.6,6.2 --add-spot 1.35,4.45,2.0
+                          # no cameras on that stretch of wall; try a cabinet top 2 m high
 
 Floor spots are rated as in tools/coverage_planner.py (good / poor angle / one
 camera / unseen, seated and standing by default). Every candidate camera (each
@@ -107,6 +109,14 @@ def main():
     ap.add_argument("--weight", action="append",
                     type=lambda t: [float(v) for v in t.split(",")],
                     help="count floor inside x1,y1,x2,y2 w times when ranking (repeatable)")
+    ap.add_argument("--no-mount", action="append", default=[],
+                    type=lambda t: [float(v) for v in t.split(",")],
+                    help="no mounting spots inside x1,y1,x2,y2, e.g. a pillar with no room "
+                         "for a camera (repeatable)")
+    ap.add_argument("--add-spot", action="append", default=[],
+                    type=lambda t: [float(v) for v in t.split(",")],
+                    help="extra mounting spot x,y or x,y,height, e.g. on top of a cabinet "
+                         "(repeatable; height defaults to --height)")
     ap.add_argument("--include-furniture", action="store_true")
     ap.add_argument("--image-format", choices=("png", "jpg"), default="png")
     args = ap.parse_args()
@@ -120,6 +130,10 @@ def main():
     furniture = None if args.include_furniture else cov.furniture_mask(points, plan)
     if any(len(w) != 5 for w in args.weight or []):
         raise SystemExit("--weight takes x1,y1,x2,y2,w")
+    if any(len(r) != 4 for r in args.no_mount):
+        raise SystemExit("--no-mount takes x1,y1,x2,y2")
+    if any(len(s) not in (2, 3) for s in args.add_spot):
+        raise SystemExit("--add-spot takes x,y or x,y,height")
     grid = cov.FloorGrid(plan, args.cell, furniture=furniture, focus=args.focus, weights=args.weight)
     cameras, skipped = current_cameras(cfg)
     if skipped:
@@ -136,7 +150,9 @@ def main():
     # Maps always show the whole room; with --focus the scored areas are outlined.
     whole_grid = grid if not args.focus else cov.FloorGrid(plan, args.cell, furniture=furniture)
     empty = cov.Planner([], grid, occ, args.posture, args.min_angle, args.max_range)
-    spots = cov.mount_spots(plan, occ, args.height)
+    spots = [[float(x), float(y), args.height] for x, y in cov.mount_spots(plan, occ, args.height)
+             if not any(x1 <= x <= x2 and y1 <= y <= y2 for x1, y1, x2, y2 in args.no_mount)]
+    spots += [s if len(s) == 3 else s + [args.height] for s in args.add_spot]
     print(f"[layout] scoring candidates at {len(spots)} mounting spots plus today's "
           f"{len(cameras)} cameras ...")
     search = cov.LayoutSearch(empty, cameras[0].lens, spots, args.height,
@@ -170,6 +186,7 @@ def main():
               "max_range_m": args.max_range, "min_tilt_deg": args.min_tilt,
               "min_overlap_m2": args.min_overlap, "min_separation_m": args.min_separation,
               "focus": args.focus, "weights": args.weight,
+              "no_mount": args.no_mount, "added_spots": args.add_spot,
               "today": now, "layouts": []}
     both_note = "" if len(today.postures) == 1 else " (each spot: worse of seated / standing)"
     for cams, score, keep in keeps:

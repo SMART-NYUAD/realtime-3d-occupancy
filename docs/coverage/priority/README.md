@@ -41,6 +41,7 @@ live system puts people from (8, 9) at around (6, 8).
 | D | Move yi01 and yi05, add one | `layout/layout_keep_yi04.jpg` | 72 / 91 | 88 / 98 | 22 / 22 | 52 / 76 | 71 / 77 |
 | E | Move all four | `layout/layout_keep_none.jpg` | 67 / 96 | 87 / 98 | 65 / 65 | 57 / 86 | 75 / 82 |
 | F | Move all four, from a longer search | `move_all_long_search/layout_keep_none.jpg` | 63 / 100 | 83 / 97 | 95 / 95 | 62 / 100 | 73 / 83 |
+| G | Move all four, nothing on or beside the pillar | `move_all_no_pillar/layout_keep_none.jpg` | 59 / 100 | 82 / 98 | 95 / 95 | 62 / 100 | 73 / 82 |
 
 What the table shows:
 
@@ -51,13 +52,18 @@ What the table shows:
 - **With two changes, the top strip and the bottom-left corner cannot both be
   fixed**: B fixes the top strip, C fixes the bottom-left corner and half-fixes the
   top strip.
-- **Only moving all four cameras (E or F)** fixes both, and gives the best coverage
+- **Only moving all four cameras (E, F or G)** fixes both, and gives the best coverage
   of the whole room.
 - **E and F are two equally good ways to move all four** (their scores are within
   0.4%). Several quite different layouts score this close, and a longer search
   found F. F gives up a little for seated people in the top strip (63% vs 67%)
   and the work area (83% vs 87%), and gains a lot in both corners: the
   bottom-left corner becomes 95% good and the (8, 9) corner 62% / 100%.
+- **G is F without the pillar spot.** E and F both put a camera at (1.04, 4.18),
+  on the pillar at (0, 4) to (1, 5.2), which has no room for a mount and blocks
+  part of the view of cameras right beside it. G keeps every camera off the pillar
+  and 1 m either side of it, and gives up almost nothing (score 0.9% below F; 4
+  points less for seated people in the top strip).
 
 ## Recommendation: option B
 
@@ -117,6 +123,26 @@ the same weights, 60 random starts instead of 30, seed 2):
 
 ![Option F: move all four, longer search](move_all_long_search/layout_keep_none.jpg)
 
+**G: move all four, nothing on or beside the pillar** (`move_all_no_pillar/layout_keep_none.jpg`;
+the same weights and 60 random starts as F, with no mounting spots from (0, 3) to
+(1.6, 6.2); seeds 0 and 2 both found this layout):
+
+| Camera | Mount at (x, y), 2.5 m high | Face towards | Tilt down | Picture centre on the floor |
+|---|---|---|---|---|
+| A | (7.84, 5.98), right wall (the same spot as F's C) | (0.00, 0.80) | 30° | (4.23, 3.59) |
+| B | (7.24, 2.08), right side, near the bottom | (0.00, 6.26) | 30° | (3.49, 4.24) |
+| C | (2.84, 10.08), top wall | (8.28, 4.64) | 28° | (6.17, 6.75) |
+| D | (0.44, 6.28), left wall, about 1 m above the pillar | (8.28, 8.83) | 30° | (4.56, 7.62) |
+
+![Option G: move all four, nothing on or beside the pillar](move_all_no_pillar/layout_keep_none.jpg)
+
+A lower camera on the cabinet in front of the pillar (top about 1.9 m high in the
+scan) was also tried, at 1.75 m and 2.0 m. The search never chose it. Even with F's
+other three cameras kept, the best cabinet camera scores 1.5–4% below G, most
+likely because from that height desks and monitors hide more seated people. Those tests also needed tilts
+of 5–10°, below the 15° limit used everywhere else, and people standing in front
+of a low camera would hide the people behind them, which the planner does not count.
+
 Both E and F put two cameras on each long side of the room, 4–4.5 m apart and
 facing in crossing directions (one up the room, one down), so each covers the
 floor just below and behind its neighbour. Forcing the cameras at least 5 m apart
@@ -137,8 +163,8 @@ positions, directions and tilts are also in the `layout_plan.json` and
   change that is less ready to call a small, far-away person "standing". A short
   recording of someone seated at (8, 9) would show which part goes wrong.
 - The scan is a snapshot. Option B's two positions are on walls, but some others
-  are beside tall furniture (D in option E, B in option F). Check every spot with
-  the live camera view before drilling.
+  are beside tall furniture (D in option E, B in option F, both on the pillar).
+  Check every spot with the live camera view before drilling.
 
 ## Regenerate
 
@@ -148,7 +174,9 @@ python tools/coverage_planner.py $W --weight 0,1,4,2,2 --image-format jpg --out 
 python tools/layout_planner.py --variants $W --weight 0,1,4,2,2 --image-format jpg --out docs/coverage/priority/layout
 python tools/layout_planner.py --keep yi04 --keep yi05 $W --weight 0,1,4,2,4 --image-format jpg --out docs/coverage/priority/balanced
 python tools/layout_planner.py --seed 2 --restarts 60 $W --weight 0,1,4,2,2 --image-format jpg --out docs/coverage/priority/move_all_long_search
+python tools/layout_planner.py --seed 0 --restarts 60 $W --weight 0,1,4,2,2 --no-mount 0,3,1.6,6.2 --image-format jpg --out docs/coverage/priority/move_all_no_pillar
 ```
 
 (In zsh, write the `--weight` options out instead of using `$W`.) The per-area
-numbers score each rectangle on its own with `--focus x1,y1,x2,y2`.
+numbers score each rectangle on its own with `--focus x1,y1,x2,y2`. To try a
+spot at another height, such as a cabinet top, add `--add-spot x,y,height`.
