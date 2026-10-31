@@ -101,6 +101,9 @@ def main(argv=None):
                 print("Difference between new rig and current calibration, per camera (meters): "
                       + ", ".join(f"{n} median {v['median']:.2f} / p95 {v['p95']:.2f}"
                                   for n, v in a["residual_by_camera_m"].items()))
+                if a["placed_by_rig_only"]:
+                    print("No current calibration (placed from the other cameras): "
+                          + ", ".join(a["placed_by_rig_only"]))
             else:
                 points = read_json(args.points) if args.points else pick_map_points(rig, cfg)
                 result = anchor_rig(rig, points, cfg)
