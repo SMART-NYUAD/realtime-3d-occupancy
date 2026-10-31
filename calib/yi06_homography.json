@@ -1,0 +1,40 @@
+{
+  "image_size": [
+    1920,
+    1080
+  ],
+  "lens": {
+    "file": "calib/yi06_intrinsics.json",
+    "fingerprint": "44d4618518d1"
+  },
+  "source": "autocalib",
+  "rig_id": "477b4f835f13060e87646505dc4c85df557e05b53582da84b907f3eaeb540033",
+  "anchored_id": "6fbbc59641718bd5df2bf286a70fe4ebd35a8684778a534ab754fbb35b243bf4",
+  "map": {
+    "scan_sha256": "d29ea552906d8b3f5a39bd292388c6981dfa8645053bee12efebaa0234abc28b",
+    "up_axis": "auto",
+    "resolved_up_axis": "y",
+    "handedness": 1,
+    "flip_x": true,
+    "flip_y": false,
+    "clip_percentile": 0.2
+  },
+  "ankle_homography": [
+    [
+      -0.0007225342444805212,
+      0.006123595956887585,
+      -1.8802177464697187
+    ],
+    [
+      0.0018599039824556908,
+      0.0047821022629080745,
+      -3.471877295093587
+    ],
+    [
+      2.4406097882899756e-05,
+      0.000668505371070296,
+      -0.12872740437335028
+    ]
+  ],
+  "ankle_height_m": 0.08374159795559277
+}

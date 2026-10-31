@@ -1,0 +1,56 @@
+[
+  {
+    "t": 1793448166.388195,
+    "world": [
+      1.34,
+      6.02
+    ],
+    "role": "anchor",
+    "note": "A1: stop 26-33 s into the walk (5 samples within 0.5 s)"
+  },
+  {
+    "t": 1793448184.5881994,
+    "world": [
+      2.0,
+      6.84
+    ],
+    "role": "anchor",
+    "note": "C1: stop 44-52 s into the walk (5 samples within 0.5 s)"
+  },
+  {
+    "t": 1793448193.1882014,
+    "world": [
+      2.86,
+      7.56
+    ],
+    "role": "anchor",
+    "note": "A2: stop 56-64 s into the walk (5 samples within 0.5 s)"
+  },
+  {
+    "t": 1793448216.588207,
+    "world": [
+      2.9,
+      6.02
+    ],
+    "role": "anchor",
+    "note": "C2: stop 76-83 s into the walk (5 samples within 0.5 s)"
+  },
+  {
+    "t": 1793448238.3882122,
+    "world": [
+      3.0,
+      4.52
+    ],
+    "role": "anchor",
+    "note": "C3: stop 101-109 s into the walk (5 samples within 0.5 s)"
+  },
+  {
+    "t": 1793448259.9882174,
+    "world": [
+      5.08,
+      8.38
+    ],
+    "role": "anchor",
+    "note": "A3: stop 116-126 s into the walk (5 samples within 0.5 s)"
+  }
+]

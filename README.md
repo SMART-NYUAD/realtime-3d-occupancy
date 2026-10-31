@@ -203,11 +203,17 @@ validate → export`. It records one person's walk with upright pauses, jointly
 solves camera poses, and anchors all cameras to the map together. It exports a
 separate candidate configuration after an independent validation walk passes.
 See [the workflow and testing instructions](docs/AUTOCALIBRATION_PLAN.md).
-The default calibration in `calib/` now comes from this process (October 2026):
-on an independent validation walk, cameras placed the same person a median of
-7.6 cm apart (95% within 25 cm), against 37.7 cm (71 cm) for the previous manual
-calibration. It was anchored to the existing map placement, so absolute accuracy
-has not been measured independently. Records are in `calib/autocalib/`.
+The default calibration in `calib/` comes from this process, for all four cameras
+in their current layout (31 October 2026, option E of the coverage plan). It was
+placed on the map with six floor tape marks of known position (`data/reference_points.json`).
+On an independent validation walk, cameras placed the same person a median of
+9.2 cm apart (95% within 19 cm), and the six marks were found a median of 7 cm
+(at most 13 cm) from their map positions. The marks lie between x 1.3 and 5.1 m and
+y 4.5 and 8.4 m, so accuracy elsewhere is extrapolated. yi01's frames were time-stamped
+about 1.3 s late during the walks (fixed by rebooting it), so the solve used only
+near-still moments (`solve --max-ankle-speed 0.08`). Records, including the marks
+used, are in `calib/autocalib/`. The previous three-camera calibration (October
+2026: 7.6 cm median, 25 cm at 95%) is in the git history.
 
 Calibration has two parts:
 

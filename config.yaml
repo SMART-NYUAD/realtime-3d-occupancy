@@ -25,8 +25,7 @@ cameras:
     source: "rtsp://192.168.50.68/ch0_0.h264"
     homography_file: "calib/yi05_homography.npy"
     intrinsics_file: "calib/yi05_intrinsics.json"
-  # Fourth camera (October 2026). Until its lens calibration and the calibration
-  # walk are done it appears in the camera window but adds nothing to the map.
+  # Fourth camera (added October 2026).
   - name: yi06
     source: "rtsp://192.168.50.143/ch0_0.h264"
     homography_file: "calib/yi06_homography.npy"
@@ -287,13 +286,14 @@ output:
     qos: 0
     retain: false
 
-# Joint camera calibration (autocalib.py), now the default: calib/<cam>_homography.*
-# were produced from a calibration walk, anchored to the existing map placement and
-# validated on an independent walk (records in calib/autocalib/). track.py refuses
-# to start if the map scan or its orientation settings change, since that would
-# move the map frame these calibrations are anchored to.
+# Joint camera calibration (autocalib.py), the default: calib/<cam>_homography.*
+# come from a calibration walk with all four cameras (31 October 2026, layout E),
+# placed on the map with floor tape marks of known position and validated on an
+# independent walk (records in calib/autocalib/). track.py refuses to start if the
+# map scan or its orientation settings change, since that would move the map frame
+# these calibrations are anchored to.
 autocalibration:
-  anchored_id: 879a2688ddfdbea01c0ff7791939a22d1f72108fe15e7da61e158bfcdc747979
+  anchored_id: 6fbbc59641718bd5df2bf286a70fe4ebd35a8684778a534ab754fbb35b243bf4
   map:
     scan_sha256: d29ea552906d8b3f5a39bd292388c6981dfa8645053bee12efebaa0234abc28b
     up_axis: auto

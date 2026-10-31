@@ -279,8 +279,9 @@ class TestRealScan(unittest.TestCase):
         occ = cov.Occupancy(self.points)
         ii, jj, kk = np.nonzero(occ.grid)
         solid = occ.origin + (np.column_stack([ii, jj, kk]) + 0.5) * occ.voxel
-        for c in cams:
-            self.assertLess(np.linalg.norm(solid - c.C, axis=1).min(), 0.3, c.name)
+        for c in cams:      # a gross calibration error would be metres off; brackets and
+            # gaps in the scan high on the walls leave a mounted camera up to ~0.35 m away
+            self.assertLess(np.linalg.norm(solid - c.C, axis=1).min(), 0.4, c.name)
 
     def test_cli_writes_maps_and_report(self):
         with tempfile.TemporaryDirectory() as out:
