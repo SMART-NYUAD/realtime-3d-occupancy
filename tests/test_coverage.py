@@ -296,9 +296,12 @@ class TestRealScan(unittest.TestCase):
 
     def test_layout_cli_writes_map_and_report(self):
         with tempfile.TemporaryDirectory() as out:
+            # --min-overlap 0 is temporary: yi04's stopgap calibration (November 2026) sits
+            # inside the scanned pillar, so the planner sees it as blind. Drop this after
+            # the walk that replaces it.
             r = subprocess.run([sys.executable, "tools/layout_planner.py", "--out", out,
                                 "--restarts", "1", "--keep", "yi01", "--keep", "yi04",
-                                "--keep", "yi05"],
+                                "--keep", "yi05", "--min-overlap", "0"],
                                cwd=ROOT, capture_output=True, text=True, timeout=300)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertTrue(os.path.exists(os.path.join(out, "layout_keep_yi01+yi04+yi05.png")))

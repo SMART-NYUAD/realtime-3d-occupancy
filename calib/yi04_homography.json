@@ -7,7 +7,7 @@
     "file": "calib/yi04_intrinsics.json",
     "fingerprint": "c0f95276f2cc"
   },
-  "source": "autocalib",
+  "source": "autocalib, then yi04 pose re-solved (temporary)",
   "rig_id": "477b4f835f13060e87646505dc4c85df557e05b53582da84b907f3eaeb540033",
   "anchored_id": "6fbbc59641718bd5df2bf286a70fe4ebd35a8684778a534ab754fbb35b243bf4",
   "map": {
@@ -21,20 +21,21 @@
   },
   "ankle_homography": [
     [
-      0.0007385318687667868,
-      -4.583554350204434e-05,
-      -0.07936439049134172
+      0.0007848863017593904,
+      -8.784194812243802e-05,
+      0.023260545132226543
     ],
     [
-      -0.0005402085646862292,
-      0.0011714900196989223,
-      0.7919770299993436
+      -0.0008912489553103071,
+      0.0014159758138582938,
+      1.1714071230274978
     ],
     [
-      5.183242548612028e-05,
-      0.00035546002723118225,
-      -0.17213847619587058
+      -1.0161478076269115e-06,
+      0.0004003872685082924,
+      -0.12682802392873294
     ]
   ],
-  "ankle_height_m": 0.08374159795559277
+  "ankle_height_m": 0.08374159795559277,
+  "note": "Temporary, 3 November 2026. yi04's pose was re-solved from calib/walks/cal_4cam feet plus two seated people in calib/walks/dup03 located by yi05 and yi06, because the walks only measured yi04 on a small floor patch. The resulting position is inside the scanned pillar, so it is not the true mount. Replace with a new walk focused on yi04."
 }

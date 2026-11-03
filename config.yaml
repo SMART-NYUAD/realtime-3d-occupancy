@@ -291,7 +291,7 @@ output:
 # placed on the map with floor tape marks of known position and validated on an
 # independent walk (records in calib/autocalib/). track.py refuses to start if the
 # map scan or its orientation settings change, since that would move the map frame
-# these calibrations are anchored to.
+# these calibrations are anchored to. yi04's file is a temporary re-solve (see README).
 autocalibration:
   anchored_id: 6fbbc59641718bd5df2bf286a70fe4ebd35a8684778a534ab754fbb35b243bf4
   map:

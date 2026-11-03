@@ -215,6 +215,16 @@ near-still moments (`solve --max-ankle-speed 0.08`). Records, including the mark
 used, are in `calib/autocalib/`. The previous three-camera calibration (October
 2026: 7.6 cm median, 25 cm at 95%) is in the git history.
 
+**yi04 has a temporary calibration (3 November 2026).** The walks only measured yi04 on
+a small floor patch (x 2.7-5.2, y 7.4-8.4), so the figures above do not cover the rest
+of its picture, and it doubled two people seated near (5, 5) and (7.2, 5). Its pose was
+re-solved from the walk plus those two people, as located by yi05 and yi06; that
+removes the duplicates in the recording it was fitted to, but is untested elsewhere.
+The solved position is inside the scanned pillar, so it is not the true mount, and
+the coverage planners treat yi04 as blind: do not trust coverage maps until a new
+walk focused on yi04 replaces it. `calib/autocalib/rig.json` still holds yi04's pose
+from the walks.
+
 Calibration has two parts:
 
 - **Lens** (once per camera, ever): the focal length and barrel distortion of the
