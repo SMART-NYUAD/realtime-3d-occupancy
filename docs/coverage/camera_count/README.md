@@ -114,10 +114,10 @@ layout, so every camera count needs its own mounting and calibration walk.
 | D | L6 | 0.00, 0.48 | 2.54 | 8.28, 6.47 | 32° |
 | E | L10 | 0.07, 8.02 | 2.56 | 8.28, 8.86 | 30° |
 
-On the maps, each floor square shows the worse of seated and standing. Magenta dots
-are the planned cameras and white circles are where the cameras are today (for
-reference only). `layout_plan.json` in each folder has the full numbers, every run's
-layout and score, and the settings.
+On the maps, each floor square shows the worse of seated and standing. The white dots
+are the planned cameras: the arrow shows which way each one faces, and the two lines
+are the left and right edges of its view. `layout_plan.json` in each folder has the
+full numbers, every run's layout and score, and the settings.
 
 ## Limits
 

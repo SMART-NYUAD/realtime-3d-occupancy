@@ -87,10 +87,9 @@ def to_px(plan, x, y):
     return int(px * SCALE), int(py * SCALE)
 
 
-def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=(), outline=()):
+def draw_map(plan, grid, status, cameras, title, new=None, markers=(), outline=(), new_colour=NEW):
     """Coverage map. `cameras` are drawn white; `new` (a camera, or a list of
-    (camera, label)) magenta; `faded` cameras as an outlined dot only (e.g. where a
-    camera that moves is today); `markers` are numbered (position, facing) pairs;
+    (camera, label)) in `new_colour`; `markers` are numbered (position, facing) pairs;
     `outline` rectangles (x1, y1, x2, y2[, weight]) mark the areas a --focus
     ranking scored or a --weight ranking weighted (labelled "x<weight>")."""
     bg = cv2.resize(plan.background(), None, fx=SCALE, fy=SCALE, interpolation=cv2.INTER_NEAREST)
@@ -121,29 +120,23 @@ def draw_map(plan, grid, status, cameras, title, new=None, markers=(), faded=(),
         cv2.line(img, to_px(plan, 0, m), to_px(plan, plan.width_m, m), (200, 200, 200), 1)
         cv2.putText(img, str(m), (to_px(plan, 0, m)[0] - 22, to_px(plan, 0, m)[1] + 4),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (230, 230, 230), 1)
-    for c in faded:
-        p = to_px(plan, *c.C[:2])
-        cv2.circle(img, p, 7, (255, 255, 255), 2)
-        cv2.putText(img, f"{c.name} today", (p[0] + 9, p[1] + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                    (0, 0, 0), 3)
-        cv2.putText(img, f"{c.name} today", (p[0] + 9, p[1] + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                    (255, 255, 255), 1)
     for c in cameras:
         draw_camera(img, plan, c, (255, 255, 255), c.name)
     if new is not None:
         for cam, label in (new if isinstance(new, list) else [(new, "NEW")]):
-            draw_camera(img, plan, cam, NEW, label)
+            draw_camera(img, plan, cam, new_colour, label)
     for k, (C, yaw) in enumerate(markers, 1):
         p = to_px(plan, *C[:2])
         end = to_px(plan, C[0] + 0.8 * np.cos(np.radians(yaw)), C[1] + 0.8 * np.sin(np.radians(yaw)))
         cv2.arrowedLine(img, p, end, NEW, 2, tipLength=0.3)
         cv2.circle(img, p, 11, NEW, -1)
         cv2.putText(img, str(k), (p[0] - 5, p[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-    return add_legend(img, title, outlined=bool(outline))
+    return add_legend(img, title, outline, cameras=bool(cameras) or bool(new))
 
 
 def draw_camera(img, plan, cam, colour, label):
-    """Dot plus the floor wedge between the picture's left and right edges."""
+    """Dot plus the floor wedge between the picture's left and right edges, each
+    line on a dark edge so it shows on any floor colour."""
     fwd = cam.R[2]
     yaw = np.degrees(np.arctan2(fwd[1], fwd[0]))
     w, h = cam.lens.image_size
@@ -153,27 +146,58 @@ def draw_camera(img, plan, cam, colour, label):
     for ray in rays.T:
         d = cam.R.T @ ray
         d2 = d[:2] / max(np.linalg.norm(d[:2]), 1e-9)
-        end = cam.C[:2] + 3.0 * d2
-        cv2.line(img, p0, to_px(plan, *end), colour, 1, cv2.LINE_AA)
-    tip = cam.C[:2] + 0.7 * np.array([np.cos(np.radians(yaw)), np.sin(np.radians(yaw))])
-    cv2.arrowedLine(img, p0, to_px(plan, *tip), colour, 2, tipLength=0.3)
-    cv2.circle(img, p0, 7, colour, -1)
-    cv2.circle(img, p0, 7, (0, 0, 0), 1)
-    cv2.putText(img, label, (p0[0] + 9, p0[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
-    cv2.putText(img, label, (p0[0] + 9, p0[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, colour, 1)
+        end = to_px(plan, *(cam.C[:2] + 3.0 * d2))
+        cv2.line(img, p0, end, (0, 0, 0), 6, cv2.LINE_AA)
+        cv2.line(img, p0, end, colour, 3, cv2.LINE_AA)
+    tip = to_px(plan, *(cam.C[:2] + 0.7 * np.array([np.cos(np.radians(yaw)), np.sin(np.radians(yaw))])))
+    cv2.arrowedLine(img, p0, tip, (0, 0, 0), 6, cv2.LINE_AA, tipLength=0.3)
+    cv2.arrowedLine(img, p0, tip, colour, 3, cv2.LINE_AA, tipLength=0.3)
+    cv2.circle(img, p0, 9, colour, -1, cv2.LINE_AA)
+    cv2.circle(img, p0, 9, (0, 0, 0), 2, cv2.LINE_AA)
+    # The label sits behind the camera, clear of its view lines.
+    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+    back = np.subtract(p0, tip) / max(np.hypot(*np.subtract(p0, tip)), 1e-9)
+    reach = 16 + 0.5 * np.hypot(tw, th)
+    org = (int(p0[0] + reach * back[0] - tw / 2), int(p0[1] + reach * back[1] + th / 2))
+    cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 5, cv2.LINE_AA)
+    cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, colour, 2, cv2.LINE_AA)
 
 
-def add_legend(img, title, outlined=False):
+def fit_text(text, scale, thickness, width):
+    """The largest font scale up to `scale` at which `text` fits in `width` pixels."""
+    w = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)[0][0]
+    return scale if w <= width else scale * width / w
+
+
+def add_legend(img, title, outline=(), cameras=False):
+    ink = (20, 20, 20)
     rows = [(LABELS[s], COLOURS[s]) for s in (cov.GOOD, cov.POOR, cov.SINGLE, cov.UNSEEN)]
     rows.append(("desk / cabinet (not scored)", (90, 90, 90)))
-    if outlined:
-        rows.append(("outlined: areas the ranking scored only, or weighted (x weight)", OUTLINE))
-    panel = np.full((40 + 22 * len(rows), img.shape[1], 3), 245, np.uint8)
-    cv2.putText(panel, title, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (20, 20, 20), 1, cv2.LINE_AA)
+    if outline:
+        weighted = [len(r) > 4 for r in outline]
+        rows.append(("outlined: weighted areas (x weight)" if all(weighted) else
+                     "outlined: areas the ranking scored" if not any(weighted) else
+                     "outlined: areas scored only, or weighted (x weight)", OUTLINE))
+    if cameras:
+        rows.append(("camera; lines: left and right edges of its view", None))
+    step, pad = 40, 14
+    panel = np.full((62 + step * len(rows), img.shape[1], 3), 245, np.uint8)
+    width = img.shape[1] - 2 * pad
+    cv2.putText(panel, title, (pad, 36), cv2.FONT_HERSHEY_SIMPLEX, fit_text(title, 0.85, 2, width),
+                ink, 2, cv2.LINE_AA)
     for k, (text, colour) in enumerate(rows):
-        y = 44 + 22 * k
-        cv2.rectangle(panel, (10, y - 12), (28, y + 4), colour, -1)
-        cv2.putText(panel, text, (36, y + 2), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (20, 20, 20), 1, cv2.LINE_AA)
+        y = 78 + step * k
+        if colour is None:                     # a camera: dot, arrow and view edges
+            c = (pad + 15, y - 2)
+            for dx in (-14, 14):
+                cv2.line(panel, c, (c[0] + dx, y - 18), ink, 3, cv2.LINE_AA)
+            cv2.circle(panel, (c[0], y - 2), 8, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(panel, (c[0], y - 2), 8, ink, 2, cv2.LINE_AA)
+        else:
+            cv2.rectangle(panel, (pad, y - 20), (pad + 30, y + 8), colour, -1)
+        x = pad + 44
+        cv2.putText(panel, text, (x, y + 4), cv2.FONT_HERSHEY_SIMPLEX,
+                    fit_text(text, 0.75, 2, img.shape[1] - x - pad), ink, 2, cv2.LINE_AA)
     return np.vstack([img, panel])
 
 

@@ -77,11 +77,12 @@ def chart(rows, path):
         ax.set_xlabel("Number of cameras", fontsize=9, color=MUTED)
     axes[0].set_ylabel("Good floor (%)", fontsize=9, color=MUTED)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper right", ncol=2, frameon=False, fontsize=9,
+    fig.legend(handles, labels, loc="upper right", ncol=2, frameon=False, fontsize=13, markerscale=1.3,
+               handlelength=2.5, columnspacing=2.0,
                bbox_to_anchor=(0.99, 1.0), labelcolor=INK)
     fig.suptitle("Predicted good floor by number of cameras (best of 10 runs each)",
                  fontsize=11, color=INK, x=0.01, ha="left")
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.tight_layout(rect=(0, 0, 1, 0.9))
     fig.savefig(path, dpi=160, facecolor=SURFACE)
 
 

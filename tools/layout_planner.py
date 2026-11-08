@@ -254,7 +254,6 @@ def main():
                     row["mount_line"] = marked[c["pos"]]["line"] + 1
         record["zones"] = zone_summaries(today, *search.evaluate(cams), args.weight or [])
         report["layouts"].append(record)
-        in_layout = {c["name"] for c in cams if c["name"]}
         stay = [cam for cam, label in labels if label in names]
         moved = [(cam, label) for cam, label in labels if label not in names]
         name = "layout_keep_" + ("+".join(keep) if keep else "none")
@@ -265,8 +264,7 @@ def main():
             drawn = whole.worst()
         else:
             drawn = today.worst(status)
-        img = draw_map(plan, whole_grid, drawn, stay, title, new=moved,
-                       faded=[c for c in cameras if c.name not in in_layout],
+        img = draw_map(plan, whole_grid, drawn, stay, title, new=moved, new_colour=(255, 255, 255),
                        outline=list(args.focus or []) + list(args.weight or []))
         cv2.imwrite(os.path.join(args.out, f"{name}.{args.image_format}"), img,
                     [cv2.IMWRITE_JPEG_QUALITY, 88] if args.image_format == "jpg" else [])
