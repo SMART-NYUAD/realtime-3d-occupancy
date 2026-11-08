@@ -26,15 +26,6 @@ def pct(s, key):
     return 100.0 * s[key] / s["floor_m2"] if s["floor_m2"] else 0.0
 
 
-def wall_point(xy, line):
-    """Nearest point on a drawn mounting line: where the bracket goes."""
-    (ax, ay), (bx, by) = line["start"], line["end"]
-    dx, dy = bx - ax, by - ay
-    t = ((xy[0] - ax) * dx + (xy[1] - ay) * dy) / max(dx * dx + dy * dy, 1e-12)
-    t = min(max(t, 0.0), 1.0)
-    return [round(ax + t * dx, 2), round(ay + t * dy, 2)]
-
-
 def load():
     rows = []
     for path in glob.glob(os.path.join(HERE, "*_cameras", "layout_plan.json")):
@@ -42,9 +33,6 @@ def load():
         with open(path) as f:
             plan = json.load(f)
         best = plan["layouts"][0]
-        for c in best["cameras"]:
-            if c.get("mount_line"):
-                c["wall_point_m"] = wall_point(c["position_m"], plan["mount_lines"][c["mount_line"] - 1])
         rows.append({"cameras": n, "score": best["score"], "zones": best["zones"],
                      "agreement": plan.get("agreement"), "best_seed": plan.get("best_seed"),
                      "runs": [{"seed": r["seed"], "score": r["score"],
@@ -124,14 +112,13 @@ def main():
 
     for r in rows:
         print(f"\n**{r['cameras']} cameras** (best run: seed {r['best_seed']})\n")
-        print("| Camera | Mount on line | Wall point x, y (m) | Height (m) | Lens at x, y (m) | Face towards x, y | Tilt down |")
-        print("|---|---|---|---|---|---|---|")
+        print("| Camera | Mount on line | Position x, y (m) | Height (m) | Face towards x, y | Tilt down |")
+        print("|---|---|---|---|---|---|")
         for c in r["layout"]:
             x, y, z = c["position_m"]
             fx, fy = c["face_towards_m"]
-            wx, wy = c.get("wall_point_m", (float("nan"), float("nan")))
-            print(f"| {c['label']} | L{c.get('mount_line', '?')} | {wx:.2f}, {wy:.2f} | {z:.2f} | {x:.2f}, {y:.2f} | "
-                  f"{fx:.2f}, {fy:.2f} | {c['tilt_down_deg']:.0f} deg |")
+            print(f"| {c['label']} | L{c.get('mount_line', '?')} | {x:.2f}, {y:.2f} | {z:.2f} | "
+                  f"{fx:.2f}, {fy:.2f} | {c['tilt_down_deg']:.0f}° |")
 
 
 if __name__ == "__main__":

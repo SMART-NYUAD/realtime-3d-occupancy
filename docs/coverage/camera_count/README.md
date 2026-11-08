@@ -11,8 +11,12 @@ against.
 ## What was run
 
 - **Mounting places:** the 13 lines in `data/mount_lines.json`, each at its own height
-  (1.9 to 2.6 m), picked from the scan's side view. The pillar faces (L7 to L9) are
-  included. No camera is kept where it is today.
+  (1.9 to 2.6 m), picked from the scan's side view. Every camera is placed **exactly on
+  a line**, at points every 0.5 m along it (74 places in all). The pillar faces (L7 to
+  L9) are included. No camera is kept where it is today.
+- **Which way a camera can face:** each line faces the side with more open space at its
+  height, which is into the room; the search tries directions up to 75° either side of
+  that, and tilts from 15° down.
 - **Priority:** the work area (2, 2) to (8, 10) and the bottom-left corner (0, 0.5) to
   (4, 2) count twice; the rest of the room counts once.
 - **Search:** for each number of cameras, 10 independent runs (seeds 0 to 9), each
@@ -20,8 +24,9 @@ against.
 - **Rules (planner defaults):** a spot is **good** when two cameras see the person's
   head and shoulders and their lines of sight cross at 25° or more; cameras see up to
   9 m; every camera shares at least 2 m² of floor with another (needed for the
-  calibration walk); cameras are at least 1 m apart. Seated and standing people are
-  both scored.
+  calibration walk); cameras are at least 1 m apart. The first 0.3 m in front of a
+  camera is not checked for blocking, since that is the wall or cabinet it is fixed to.
+  Seated and standing people are both scored.
 
 ## Results
 
@@ -29,83 +34,85 @@ Share of floor that is **good**, written as **seated / standing** (%).
 
 | Cameras | Whole room | Work area (2, 2)-(8, 10) | Bottom-left corner (0, 0.5)-(4, 2) | Unseen, whole room | Gain in good floor |
 |---|---|---|---|---|---|
-| 2 | 49 / 59 | 71 / 88 | 0 / 2 | 27 / 23 | n/a |
-| 3 | 65 / 73 | 81 / 93 | 52 / 50 | 17 / 15 | +16 / +15 |
-| 4 | 75 / 84 | 86 / 98 | 57 / 55 | 13 / 9 | +10 / +11 |
-| 5 | 81 / 88 | 89 / 98 | 98 / 98 | 13 / 9 | +6 / +3 |
+| 2 | 50 / 55 | 66 / 73 | 21 / 24 | 30 / 26 | n/a |
+| 3 | 58 / 71 | 79 / 95 | 52 / 52 | 18 / 14 | +8 / +15 |
+| 4 | 72 / 82 | 82 / 96 | 81 / 83 | 14 / 10 | +14 / +11 |
+| 5 | 79 / 88 | 88 / 98 | 90 / 98 | 10 / 7 | +7 / +7 |
 
 What this shows:
 
-- **Each camera adds less than the one before.** Good floor in the whole room rises by
-  16 / 15 points from 2 to 3 cameras, 10 / 11 from 3 to 4, and 6 / 3 from 4 to 5.
-- **Four cameras cover the work area almost fully for standing people (98%)**, and 86%
-  for seated people. A fifth camera adds little there (89 / 98).
-- **The fifth camera mainly fixes the bottom-left corner**, from 57 / 55 to 98 / 98.
-- **Some floor stays unseen even with 5 cameras** (13 / 9%), mostly the bottom-right
+- **Good floor rises with every camera, but each one adds less.** In the whole room it
+  goes from 50 / 55 with 2 cameras to 79 / 88 with 5. The 5th camera adds 7 / 7 points.
+- **For seated people the 4th camera matters most** (+14 points), more than the 3rd (+8).
+  For standing people the 3rd camera matters most (+15).
+- **Four cameras cover the work area well for standing people (96%)**, and 82% for seated
+  people. A fifth raises these to 98% and 88%.
+- **The bottom-left corner needs at least 4 cameras** to be mostly good (81 / 83); with 5
+  it reaches 90 / 98.
+- **Some floor stays unseen even with 5 cameras** (10 / 7%), mostly the bottom-right
   area (x 5 to 8, y 0 to 1.5) and strips along the walls. The bottom-right area is
   outside both priority zones, so the planner does not spend cameras on it.
 - **Seated people are always harder than standing ones**, because desks and monitors
-  hide them; the gap is largest with few cameras.
+  hide them.
 
 ## How much the 10 runs agreed
 
 | Cameras | Runs within 0.5% of the best | Score range | Largest camera move between runs |
 |---|---|---|---|
-| 2 | 10 of 10 | 85.0 to 85.0 | 0.00 m |
-| 3 | 10 of 10 | 102.0 to 102.0 | 0.00 m |
-| 4 | 10 of 10 | 111.2 to 111.5 | 0.50 m |
-| 5 | 10 of 10 | 116.8 to 116.8 | 0.00 m |
+| 2 | 10 of 10 | 80.1 to 80.1 | 0.00 m |
+| 3 | 10 of 10 | 98.5 to 98.5 | 0.00 m |
+| 4 | 10 of 10 | 109.2 to 109.5 | 4.88 m |
+| 5 | 5 of 10 | 115.0 to 116.1 | 4.58 m |
 
-For 2, 3 and 5 cameras every run found the same layout. For 4 cameras there are two
-almost equal layouts (scores 111.2 and 111.5) that differ by one camera moving up to
-0.5 m; the higher one (seed 3) is used. The search is therefore not sensitive to its
-starting point, so the layouts below can be treated as the planner's answer.
+- **2 and 3 cameras:** every run found the same layout.
+- **4 cameras:** every run scored within 0.3% of the best, but they did not all pick the
+  same layout; one camera can move up to 4.9 m between layouts that score almost the
+  same. Several 4-camera layouts are about equally good, so the choice between them can
+  be made on practical grounds (cabling, ease of mounting) without losing coverage.
+- **5 cameras:** 5 of the 10 runs found the best layout; the others scored up to 1%
+  lower. The search is less settled here, so a longer search might find a slightly
+  better 5-camera layout.
 
 ## Where to mount each layout
 
-**Mount on line** is the line drawn in the mount editor. **Wall point** is where to fix
-the camera on that line, at the given **height**. **Lens at** is where the planner
-places the lens, 0.15 to 0.35 m in front of the wall, which is about where a bracket
-holds it. Turn the camera to face the **face towards** point and tilt it down by the
-given angle.
+Each camera goes **on the given line, at the given position and height**. Turn it to
+face the **face towards** point and tilt it down by the given angle. The layouts are not
+built from each other: the best 4-camera layout does not contain the best 3-camera
+layout, so every camera count needs its own mounting and calibration walk.
 
-The layouts are not built from each other: the best 4-camera layout does not contain
-the best 3-camera layout. Every camera count needs its own mounting and calibration
-walk.
+**2 cameras** (best run: seed 0; map: [`2_cameras/layout_keep_none.jpg`](2_cameras/layout_keep_none.jpg))
 
-**2 cameras** (map: [`2_cameras/layout_keep_none.jpg`](2_cameras/layout_keep_none.jpg))
+| Camera | Mount on line | Position x, y (m) | Height (m) | Face towards x, y | Tilt down |
+|---|---|---|---|---|---|
+| A | L2 | 8.09, 8.32 | 2.52 | 0.00, 3.65 | 30° |
+| B | L1 | 3.95, 10.39 | 2.60 | 3.95, 0.00 | 30° |
 
-| Camera | Mount on line | Wall point x, y (m) | Height (m) | Lens at x, y (m) | Face towards x, y | Tilt down |
-|---|---|---|---|---|---|---|
-| A | L2 | 8.09, 9.88 | 2.52 | 7.84, 9.88 | 0.00, 2.04 | 30° |
-| B | L1 | 1.84, 10.39 | 2.60 | 1.84, 10.08 | 8.28, 0.16 | 30° |
+**3 cameras** (best run: seed 0; map: [`3_cameras/layout_keep_none.jpg`](3_cameras/layout_keep_none.jpg))
 
-**3 cameras** (map: [`3_cameras/layout_keep_none.jpg`](3_cameras/layout_keep_none.jpg))
+| Camera | Mount on line | Position x, y (m) | Height (m) | Face towards x, y | Tilt down |
+|---|---|---|---|---|---|
+| A | L2 | 8.09, 7.28 | 2.52 | 0.00, 1.41 | 28° |
+| B | L8 | 0.82, 4.86 | 2.48 | 7.65, 10.39 | 30° |
+| C | L11 | 0.81, 9.58 | 2.56 | 8.28, 2.31 | 30° |
 
-| Camera | Mount on line | Wall point x, y (m) | Height (m) | Lens at x, y (m) | Face towards x, y | Tilt down |
-|---|---|---|---|---|---|---|
-| A | L2 | 8.09, 10.08 | 2.52 | 7.84, 10.08 | 0.00, 3.02 | 28° |
-| B | L1 | 2.44, 10.39 | 2.60 | 2.44, 10.08 | 8.26, 0.00 | 18° |
-| C | L2 | 8.09, 3.68 | 2.52 | 7.84, 3.68 | 0.00, 6.23 | 22° |
+**4 cameras** (best run: seed 9; map: [`4_cameras/layout_keep_none.jpg`](4_cameras/layout_keep_none.jpg))
 
-**4 cameras** (map: [`4_cameras/layout_keep_none.jpg`](4_cameras/layout_keep_none.jpg))
+| Camera | Mount on line | Position x, y (m) | Height (m) | Face towards x, y | Tilt down |
+|---|---|---|---|---|---|
+| A | L2 | 8.09, 7.28 | 2.52 | 0.00, 0.00 | 28° |
+| B | L4 | 4.19, 0.44 | 2.44 | 0.00, 7.70 | 30° |
+| C | L10 | 0.06, 6.45 | 2.56 | 8.28, 3.76 | 28° |
+| D | L3 | 7.87, 3.17 | 2.43 | 2.62, 10.39 | 30° |
 
-| Camera | Mount on line | Wall point x, y (m) | Height (m) | Lens at x, y (m) | Face towards x, y | Tilt down |
-|---|---|---|---|---|---|---|
-| A | L2 | 8.09, 3.68 | 2.52 | 7.84, 3.68 | 0.00, 6.69 | 22° |
-| B | L2 | 8.09, 7.78 | 2.52 | 7.94, 7.78 | 0.16, 0.00 | 30° |
-| C | L10 | 0.07, 7.98 | 2.56 | 0.34, 7.98 | 8.28, 3.39 | 17° |
-| D | L8 | 0.82, 4.08 | 2.48 | 1.04, 4.08 | 7.35, 10.39 | 16° |
+**5 cameras** (best run: seed 3; map: [`5_cameras/layout_keep_none.jpg`](5_cameras/layout_keep_none.jpg))
 
-**5 cameras** (map: [`5_cameras/layout_keep_none.jpg`](5_cameras/layout_keep_none.jpg))
-
-| Camera | Mount on line | Wall point x, y (m) | Height (m) | Lens at x, y (m) | Face towards x, y | Tilt down |
-|---|---|---|---|---|---|---|
-| A | L10 | 0.07, 7.98 | 2.56 | 0.34, 7.98 | 8.28, 3.39 | 28° |
-| B | L2 | 8.09, 6.28 | 2.52 | 7.94, 6.28 | 3.38, 0.00 | 32° |
-| C | L2 | 8.09, 4.18 | 2.52 | 7.74, 4.18 | 1.53, 10.39 | 28° |
-| D | L4 | 4.84, 0.44 | 2.44 | 4.84, 0.68 | 0.00, 5.52 | 20° |
-| E | L8 | 0.82, 4.08 | 2.48 | 1.04, 4.08 | 7.35, 10.39 | 16° |
+| Camera | Mount on line | Position x, y (m) | Height (m) | Face towards x, y | Tilt down |
+|---|---|---|---|---|---|
+| A | L2 | 8.09, 5.21 | 2.52 | 0.00, 7.84 | 30° |
+| B | L4 | 4.19, 0.44 | 2.44 | 0.00, 5.61 | 30° |
+| C | L8 | 0.82, 4.07 | 2.48 | 8.28, 4.07 | 20° |
+| D | L6 | 0.00, 0.48 | 2.54 | 8.28, 6.47 | 32° |
+| E | L10 | 0.07, 8.02 | 2.56 | 8.28, 8.86 | 30° |
 
 On the maps, each floor square shows the worse of seated and standing. Magenta dots
 are the planned cameras and white circles are where the cameras are today (for
@@ -134,4 +141,4 @@ done
 python docs/coverage/camera_count/summary.py   # chart, summary.json and the tables above
 ```
 
-On a Mac the four searches took 54 s, 105 s, 160 s and 253 s.
+On a Mac the four searches took 57 s, 102 s, 157 s and 264 s.

@@ -189,8 +189,8 @@ def main():
         lines = cov.load_mount_lines(args.mount_lines)
         marked, dropped = cov.spots_on_lines(plan, occ, lines)
         for d in dropped:
-            print(f"[layout] line {d['line'] + 1}: no free space near x={d['xy'][0]:.2f}, "
-                  f"y={d['xy'][1]:.2f}; spot skipped")
+            print(f"[layout] line {d['line'] + 1}: the scan blocks the view in front of "
+                  f"x={d['xy'][0]:.2f}, y={d['xy'][1]:.2f}; spot skipped")
         if not marked:
             raise SystemExit(f"no usable mounting spots on the lines in {args.mount_lines}")
         spots = [[s["xy"][0], s["xy"][1], s["height"]] for s in marked]
@@ -252,7 +252,6 @@ def main():
             for row, c in zip(record["cameras"], cams):
                 if c["pos"] < len(marked):
                     row["mount_line"] = marked[c["pos"]]["line"] + 1
-                    row["moved_off_line_m"] = round(marked[c["pos"]]["shift_m"], 2)
         record["zones"] = zone_summaries(today, *search.evaluate(cams), args.weight or [])
         report["layouts"].append(record)
         in_layout = {c["name"] for c in cams if c["name"]}

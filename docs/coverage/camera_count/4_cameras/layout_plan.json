@@ -194,28 +194,28 @@
   "layouts": [
     {
       "keep": [],
-      "score": 111.45,
+      "score": 109.46,
       "after": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.6,
-          "unseen_m2": 8.0,
-          "three_plus_m2": 25.1
+          "good_m2": 45.4,
+          "poor_angle_m2": 0.4,
+          "single_m2": 8.5,
+          "unseen_m2": 8.6,
+          "three_plus_m2": 22.1
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 53.0,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.1,
-          "unseen_m2": 5.7,
-          "three_plus_m2": 32.2
+          "good_m2": 51.3,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.6,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 28.2
         }
       },
       "good_gain_m2": {
-        "seated": 14.9,
-        "standing": 17.4
+        "seated": 13.2,
+        "standing": 15.7
       },
       "cameras": [
         {
@@ -223,127 +223,123 @@
           "current_camera": null,
           "kept": false,
           "position_m": [
-            7.84,
-            3.68,
+            8.09,
+            7.28,
             2.52
           ],
-          "facing_deg": 159.0,
-          "tilt_down_deg": 22.0,
+          "facing_deg": -138.0,
+          "tilt_down_deg": 28.0,
           "face_towards_m": [
             0.0,
-            6.69
+            0.0
           ],
-          "mount_line": 2,
-          "moved_off_line_m": 0.25
+          "mount_line": 2
         },
         {
           "label": "B",
           "current_camera": null,
           "kept": false,
           "position_m": [
-            7.94,
-            7.78,
-            2.52
+            4.19,
+            0.44,
+            2.44
           ],
-          "facing_deg": -135.0,
+          "facing_deg": 120.0,
           "tilt_down_deg": 30.0,
           "face_towards_m": [
-            0.16,
-            0.0
+            0.0,
+            7.7
           ],
-          "mount_line": 2,
-          "moved_off_line_m": 0.15
+          "mount_line": 4
         },
         {
           "label": "C",
           "current_camera": null,
           "kept": false,
           "position_m": [
-            0.34,
-            7.98,
+            0.06,
+            6.45,
             2.56
           ],
-          "facing_deg": -30.0,
-          "tilt_down_deg": 17.0,
+          "facing_deg": -18.1,
+          "tilt_down_deg": 28.0,
           "face_towards_m": [
             8.28,
-            3.39
+            3.76
           ],
-          "mount_line": 10,
-          "moved_off_line_m": 0.28
+          "mount_line": 10
         },
         {
           "label": "D",
           "current_camera": null,
           "kept": false,
           "position_m": [
-            1.04,
-            4.08,
-            2.48
+            7.87,
+            3.17,
+            2.43
           ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0,
+          "facing_deg": 126.0,
+          "tilt_down_deg": 30.0,
           "face_towards_m": [
-            7.35,
+            2.62,
             10.39
           ],
-          "mount_line": 8,
-          "moved_off_line_m": 0.22
+          "mount_line": 3
         }
       ],
       "zones": {
         "whole room": {
           "seated": {
             "floor_m2": 62.9,
-            "good_m2": 47.1,
-            "poor_angle_m2": 0.2,
-            "single_m2": 7.6,
-            "unseen_m2": 8.0,
-            "three_plus_m2": 25.1
+            "good_m2": 45.4,
+            "poor_angle_m2": 0.4,
+            "single_m2": 8.5,
+            "unseen_m2": 8.6,
+            "three_plus_m2": 22.1
           },
           "standing": {
             "floor_m2": 62.9,
-            "good_m2": 53.0,
-            "poor_angle_m2": 0.1,
-            "single_m2": 4.1,
-            "unseen_m2": 5.7,
-            "three_plus_m2": 32.2
+            "good_m2": 51.3,
+            "poor_angle_m2": 0.0,
+            "single_m2": 5.6,
+            "unseen_m2": 6.0,
+            "three_plus_m2": 28.2
           }
         },
         "2,2,8,10": {
           "seated": {
             "floor_m2": 37.8,
-            "good_m2": 32.6,
-            "poor_angle_m2": 0.2,
-            "single_m2": 3.2,
-            "unseen_m2": 1.8,
-            "three_plus_m2": 21.4
+            "good_m2": 31.1,
+            "poor_angle_m2": 0.4,
+            "single_m2": 4.1,
+            "unseen_m2": 2.2,
+            "three_plus_m2": 17.7
           },
           "standing": {
             "floor_m2": 37.8,
-            "good_m2": 37.0,
+            "good_m2": 36.2,
             "poor_angle_m2": 0.0,
-            "single_m2": 0.4,
-            "unseen_m2": 0.3,
-            "three_plus_m2": 27.3
+            "single_m2": 1.2,
+            "unseen_m2": 0.2,
+            "three_plus_m2": 22.4
           }
         },
         "0,0.5,4,2": {
           "seated": {
             "floor_m2": 4.2,
-            "good_m2": 2.4,
-            "poor_angle_m2": 0.1,
-            "single_m2": 1.7,
-            "unseen_m2": 0.1,
-            "three_plus_m2": 0.8
+            "good_m2": 3.4,
+            "poor_angle_m2": 0.0,
+            "single_m2": 0.6,
+            "unseen_m2": 0.2,
+            "three_plus_m2": 1.0
           },
           "standing": {
             "floor_m2": 4.2,
-            "good_m2": 2.3,
-            "poor_angle_m2": 0.1,
-            "single_m2": 1.8,
-            "unseen_m2": 0.1,
-            "three_plus_m2": 0.6
+            "good_m2": 3.5,
+            "poor_angle_m2": 0.0,
+            "single_m2": 0.4,
+            "unseen_m2": 0.3,
+            "three_plus_m2": 1.1
           }
         }
       }
@@ -352,621 +348,621 @@
   "runs": [
     {
       "seed": 0,
-      "score": 111.23,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            0.34,
-            7.98,
+            0.07,
+            8.02,
             2.56
           ],
-          "facing_deg": -27.0,
+          "facing_deg": -27.1,
+          "tilt_down_deg": 30.0
+        },
+        {
+          "position_m": [
+            7.87,
+            3.17,
+            2.43
+          ],
+          "facing_deg": 153.0,
           "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            7.94,
-            7.78,
-            2.52
+            0.86,
+            4.01,
+            2.42
           ],
-          "facing_deg": -132.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            7.84,
-            3.68,
+            8.09,
+            7.28,
             2.52
           ],
-          "facing_deg": 162.0,
-          "tilt_down_deg": 26.0
-        },
-        {
-          "position_m": [
-            1.04,
-            4.08,
-            2.48
-          ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.7,
-          "unseen_m2": 7.9,
-          "three_plus_m2": 23.6
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 52.8,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.4,
-          "unseen_m2": 5.6,
-          "three_plus_m2": 30.7
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
         }
       },
-      "largest_move_from_best_m": 0.0
+      "largest_move_from_best_m": 4.88
     },
     {
       "seed": 1,
-      "score": 111.23,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            0.34,
-            7.98,
-            2.56
+            8.09,
+            7.28,
+            2.52
           ],
-          "facing_deg": -27.0,
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
+        },
+        {
+          "position_m": [
+            7.87,
+            3.17,
+            2.43
+          ],
+          "facing_deg": 153.0,
           "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            7.94,
-            7.78,
-            2.52
+            0.07,
+            8.02,
+            2.56
           ],
-          "facing_deg": -132.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": -27.1,
+          "tilt_down_deg": 30.0
         },
         {
           "position_m": [
-            1.04,
-            4.08,
-            2.48
+            0.86,
+            4.01,
+            2.42
           ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
-        },
-        {
-          "position_m": [
-            7.84,
-            3.68,
-            2.52
-          ],
-          "facing_deg": 162.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.7,
-          "unseen_m2": 7.9,
-          "three_plus_m2": 23.6
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 52.8,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.4,
-          "unseen_m2": 5.6,
-          "three_plus_m2": 30.7
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
         }
       },
-      "largest_move_from_best_m": 0.0
+      "largest_move_from_best_m": 4.88
     },
     {
       "seed": 2,
-      "score": 111.23,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            0.34,
-            7.98,
-            2.56
+            0.86,
+            4.01,
+            2.42
           ],
-          "facing_deg": -27.0,
+          "facing_deg": 37.4,
           "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            7.94,
-            7.78,
-            2.52
+            7.87,
+            3.17,
+            2.43
           ],
-          "facing_deg": -132.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": 153.0,
+          "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            7.84,
-            3.68,
-            2.52
+            0.07,
+            8.02,
+            2.56
           ],
-          "facing_deg": 162.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": -27.1,
+          "tilt_down_deg": 30.0
         },
         {
           "position_m": [
-            1.04,
-            4.08,
-            2.48
+            8.09,
+            7.28,
+            2.52
           ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.7,
-          "unseen_m2": 7.9,
-          "three_plus_m2": 23.6
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 52.8,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.4,
-          "unseen_m2": 5.6,
-          "three_plus_m2": 30.7
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
         }
       },
-      "largest_move_from_best_m": 0.0
+      "largest_move_from_best_m": 4.88
     },
     {
       "seed": 3,
-      "score": 111.45,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            7.84,
-            3.68,
-            2.52
+            0.07,
+            8.02,
+            2.56
           ],
-          "facing_deg": 159.0,
-          "tilt_down_deg": 22.0
-        },
-        {
-          "position_m": [
-            7.94,
-            7.78,
-            2.52
-          ],
-          "facing_deg": -135.0,
+          "facing_deg": -27.1,
           "tilt_down_deg": 30.0
         },
         {
           "position_m": [
-            0.34,
-            7.98,
-            2.56
+            7.87,
+            3.17,
+            2.43
           ],
-          "facing_deg": -30.0,
-          "tilt_down_deg": 17.0
+          "facing_deg": 153.0,
+          "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            1.04,
-            4.08,
-            2.48
+            0.86,
+            4.01,
+            2.42
           ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
+        },
+        {
+          "position_m": [
+            8.09,
+            7.28,
+            2.52
+          ],
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.6,
-          "unseen_m2": 8.0,
-          "three_plus_m2": 25.1
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 53.0,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.1,
-          "unseen_m2": 5.7,
-          "three_plus_m2": 32.2
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
         }
       },
-      "largest_move_from_best_m": 0.0
+      "largest_move_from_best_m": 4.88
     },
     {
       "seed": 4,
-      "score": 111.45,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            7.94,
-            7.78,
+            8.09,
+            7.28,
             2.52
           ],
-          "facing_deg": -135.0,
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
+        },
+        {
+          "position_m": [
+            7.87,
+            3.17,
+            2.43
+          ],
+          "facing_deg": 153.0,
+          "tilt_down_deg": 15.0
+        },
+        {
+          "position_m": [
+            0.07,
+            8.02,
+            2.56
+          ],
+          "facing_deg": -27.1,
           "tilt_down_deg": 30.0
         },
         {
           "position_m": [
-            0.34,
-            7.98,
-            2.56
+            0.86,
+            4.01,
+            2.42
           ],
-          "facing_deg": -30.0,
-          "tilt_down_deg": 17.0
-        },
-        {
-          "position_m": [
-            1.04,
-            4.08,
-            2.48
-          ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
-        },
-        {
-          "position_m": [
-            7.84,
-            3.68,
-            2.52
-          ],
-          "facing_deg": 159.0,
-          "tilt_down_deg": 22.0
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.6,
-          "unseen_m2": 8.0,
-          "three_plus_m2": 25.1
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 53.0,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.1,
-          "unseen_m2": 5.7,
-          "three_plus_m2": 32.2
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
         }
       },
-      "largest_move_from_best_m": 0.0
+      "largest_move_from_best_m": 4.88
     },
     {
       "seed": 5,
-      "score": 111.23,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            0.34,
-            7.98,
+            0.07,
+            8.02,
             2.56
           ],
-          "facing_deg": -27.0,
+          "facing_deg": -27.1,
+          "tilt_down_deg": 30.0
+        },
+        {
+          "position_m": [
+            7.87,
+            3.17,
+            2.43
+          ],
+          "facing_deg": 153.0,
           "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            7.94,
-            7.78,
-            2.52
+            0.86,
+            4.01,
+            2.42
           ],
-          "facing_deg": -132.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            1.04,
-            4.08,
-            2.48
-          ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
-        },
-        {
-          "position_m": [
-            7.84,
-            3.68,
+            8.09,
+            7.28,
             2.52
           ],
-          "facing_deg": 162.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.7,
-          "unseen_m2": 7.9,
-          "three_plus_m2": 23.6
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 52.8,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.4,
-          "unseen_m2": 5.6,
-          "three_plus_m2": 30.7
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
         }
       },
-      "largest_move_from_best_m": 0.0
+      "largest_move_from_best_m": 4.88
     },
     {
       "seed": 6,
-      "score": 111.23,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            0.34,
-            7.98,
-            2.56
+            8.09,
+            7.28,
+            2.52
           ],
-          "facing_deg": -27.0,
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
+        },
+        {
+          "position_m": [
+            7.87,
+            3.17,
+            2.43
+          ],
+          "facing_deg": 153.0,
           "tilt_down_deg": 15.0
         },
         {
           "position_m": [
-            7.94,
-            7.78,
-            2.52
+            0.07,
+            8.02,
+            2.56
           ],
-          "facing_deg": -132.0,
-          "tilt_down_deg": 26.0
+          "facing_deg": -27.1,
+          "tilt_down_deg": 30.0
         },
         {
           "position_m": [
-            7.84,
-            3.68,
-            2.52
+            0.86,
+            4.01,
+            2.42
           ],
-          "facing_deg": 162.0,
-          "tilt_down_deg": 26.0
-        },
-        {
-          "position_m": [
-            1.04,
-            4.08,
-            2.48
-          ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.7,
-          "unseen_m2": 7.9,
-          "three_plus_m2": 23.6
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 52.8,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.4,
-          "unseen_m2": 5.6,
-          "three_plus_m2": 30.7
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
         }
       },
-      "largest_move_from_best_m": 0.0
+      "largest_move_from_best_m": 4.88
     },
     {
       "seed": 7,
-      "score": 111.3,
+      "score": 109.16,
       "cameras": [
         {
           "position_m": [
-            7.94,
+            0.07,
+            8.02,
+            2.56
+          ],
+          "facing_deg": -27.1,
+          "tilt_down_deg": 30.0
+        },
+        {
+          "position_m": [
+            7.87,
+            3.17,
+            2.43
+          ],
+          "facing_deg": 153.0,
+          "tilt_down_deg": 15.0
+        },
+        {
+          "position_m": [
+            0.86,
+            4.01,
+            2.42
+          ],
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
+        },
+        {
+          "position_m": [
+            8.09,
+            7.28,
+            2.52
+          ],
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
+        }
+      ],
+      "summaries": {
+        "seated": {
+          "floor_m2": 62.9,
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
+        },
+        "standing": {
+          "floor_m2": 62.9,
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
+        }
+      },
+      "largest_move_from_best_m": 4.88
+    },
+    {
+      "seed": 8,
+      "score": 109.16,
+      "cameras": [
+        {
+          "position_m": [
+            8.09,
+            7.28,
+            2.52
+          ],
+          "facing_deg": -144.0,
+          "tilt_down_deg": 28.0
+        },
+        {
+          "position_m": [
+            7.87,
+            3.17,
+            2.43
+          ],
+          "facing_deg": 153.0,
+          "tilt_down_deg": 15.0
+        },
+        {
+          "position_m": [
+            0.07,
+            8.02,
+            2.56
+          ],
+          "facing_deg": -27.1,
+          "tilt_down_deg": 30.0
+        },
+        {
+          "position_m": [
+            0.86,
+            4.01,
+            2.42
+          ],
+          "facing_deg": 37.4,
+          "tilt_down_deg": 15.0
+        }
+      ],
+      "summaries": {
+        "seated": {
+          "floor_m2": 62.9,
+          "good_m2": 45.2,
+          "poor_angle_m2": 0.3,
+          "single_m2": 9.0,
+          "unseen_m2": 8.4,
+          "three_plus_m2": 24.8
+        },
+        "standing": {
+          "floor_m2": 62.9,
+          "good_m2": 51.2,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.7,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 30.3
+        }
+      },
+      "largest_move_from_best_m": 4.88
+    },
+    {
+      "seed": 9,
+      "score": 109.46,
+      "cameras": [
+        {
+          "position_m": [
+            8.09,
             7.28,
             2.52
           ],
           "facing_deg": -138.0,
-          "tilt_down_deg": 26.0
+          "tilt_down_deg": 28.0
         },
         {
           "position_m": [
-            0.34,
-            7.98,
+            4.19,
+            0.44,
+            2.44
+          ],
+          "facing_deg": 120.0,
+          "tilt_down_deg": 30.0
+        },
+        {
+          "position_m": [
+            0.06,
+            6.45,
             2.56
           ],
-          "facing_deg": -30.0,
-          "tilt_down_deg": 16.0
+          "facing_deg": -18.1,
+          "tilt_down_deg": 28.0
         },
         {
           "position_m": [
-            1.04,
-            4.48,
-            2.48
-          ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 15.0
-        },
-        {
-          "position_m": [
-            7.74,
-            3.38,
+            7.87,
+            3.17,
             2.43
           ],
-          "facing_deg": 156.0,
-          "tilt_down_deg": 15.0
-        }
-      ],
-      "summaries": {
-        "seated": {
-          "floor_m2": 62.9,
-          "good_m2": 46.9,
-          "poor_angle_m2": 0.8,
-          "single_m2": 6.6,
-          "unseen_m2": 8.7,
-          "three_plus_m2": 24.1
-        },
-        "standing": {
-          "floor_m2": 62.9,
-          "good_m2": 53.1,
-          "poor_angle_m2": 0.7,
-          "single_m2": 3.4,
-          "unseen_m2": 5.7,
-          "three_plus_m2": 30.8
-        }
-      },
-      "largest_move_from_best_m": 0.5
-    },
-    {
-      "seed": 8,
-      "score": 111.45,
-      "cameras": [
-        {
-          "position_m": [
-            7.94,
-            7.78,
-            2.52
-          ],
-          "facing_deg": -135.0,
+          "facing_deg": 126.0,
           "tilt_down_deg": 30.0
-        },
-        {
-          "position_m": [
-            0.34,
-            7.98,
-            2.56
-          ],
-          "facing_deg": -30.0,
-          "tilt_down_deg": 17.0
-        },
-        {
-          "position_m": [
-            1.04,
-            4.08,
-            2.48
-          ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
-        },
-        {
-          "position_m": [
-            7.84,
-            3.68,
-            2.52
-          ],
-          "facing_deg": 159.0,
-          "tilt_down_deg": 22.0
         }
       ],
       "summaries": {
         "seated": {
           "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.6,
-          "unseen_m2": 8.0,
-          "three_plus_m2": 25.1
+          "good_m2": 45.4,
+          "poor_angle_m2": 0.4,
+          "single_m2": 8.5,
+          "unseen_m2": 8.6,
+          "three_plus_m2": 22.1
         },
         "standing": {
           "floor_m2": 62.9,
-          "good_m2": 53.0,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.1,
-          "unseen_m2": 5.7,
-          "three_plus_m2": 32.2
-        }
-      },
-      "largest_move_from_best_m": 0.0
-    },
-    {
-      "seed": 9,
-      "score": 111.45,
-      "cameras": [
-        {
-          "position_m": [
-            7.94,
-            7.78,
-            2.52
-          ],
-          "facing_deg": -135.0,
-          "tilt_down_deg": 30.0
-        },
-        {
-          "position_m": [
-            0.34,
-            7.98,
-            2.56
-          ],
-          "facing_deg": -30.0,
-          "tilt_down_deg": 17.0
-        },
-        {
-          "position_m": [
-            1.04,
-            4.08,
-            2.48
-          ],
-          "facing_deg": 45.0,
-          "tilt_down_deg": 16.0
-        },
-        {
-          "position_m": [
-            7.84,
-            3.68,
-            2.52
-          ],
-          "facing_deg": 159.0,
-          "tilt_down_deg": 22.0
-        }
-      ],
-      "summaries": {
-        "seated": {
-          "floor_m2": 62.9,
-          "good_m2": 47.1,
-          "poor_angle_m2": 0.2,
-          "single_m2": 7.6,
-          "unseen_m2": 8.0,
-          "three_plus_m2": 25.1
-        },
-        "standing": {
-          "floor_m2": 62.9,
-          "good_m2": 53.0,
-          "poor_angle_m2": 0.1,
-          "single_m2": 4.1,
-          "unseen_m2": 5.7,
-          "three_plus_m2": 32.2
+          "good_m2": 51.3,
+          "poor_angle_m2": 0.0,
+          "single_m2": 5.6,
+          "unseen_m2": 6.0,
+          "three_plus_m2": 28.2
         }
       },
       "largest_move_from_best_m": 0.0
     }
   ],
-  "best_seed": 3,
+  "best_seed": 9,
   "agreement": {
     "runs": 10,
     "valid_runs": 10,
     "within_half_percent_of_best": 10,
-    "score_min": 111.23,
-    "score_max": 111.45
+    "score_min": 109.16,
+    "score_max": 109.46
   }
 }

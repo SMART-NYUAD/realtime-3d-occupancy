@@ -303,49 +303,69 @@ def check_mount_lines(lines):
     return clean
 
 
-def spots_on_lines(plan, occ, lines, spacing=0.5, wall_gap=0.15, max_shift=0.6, half_band=0.1):
-    """Mounting spots every `spacing` m along hand-drawn lines, each at its line's
-    height. A line is drawn on the wall, but a camera sits in front of it, so a spot
-    moves to the nearest free space at least wall_gap m from anything solid at that
-    height; one with no such space within max_shift m is dropped. Only the scan within
-    half_band m of the camera's height counts, so a cabinet below it does not push it
-    away. Returns (spots, dropped): each spot has line (index), xy, height, yaw (facing
-    away from the nearest solid) and shift_m; each dropped one has line and xy."""
+def spots_on_lines(plan, occ, lines, spacing=0.5, half_band=0.1, view_clear_m=0.35):
+    """Mounting spots every `spacing` m exactly on hand-drawn lines, each at its line's
+    height. A line faces the side with more free space at its height (into the room),
+    and the search tries directions around that. The scan within view_clear_m m of the
+    camera is the wall or cabinet it is fixed to, so it does not block the view
+    (Occupancy.clear_lines skips it), but a spot whose view is still solid
+    view_clear_m m away in every direction within 60 degrees of where it faces (a line
+    drawn inside furniture or behind a tall cabinet) is dropped. Only the
+    scan within half_band m of the camera's height counts. Returns (spots, dropped):
+    each spot has line (index), xy, height and yaw; each dropped one has line and xy."""
     nx, ny = occ.shape[:2]
     cx = occ.origin[0] + (np.arange(nx) + 0.5) * occ.voxel
     cy = occ.origin[1] + (np.arange(ny) + 0.5) * occ.voxel
     inside = np.array([[plan.in_valid_area(x, y) for y in cy] for x in cx])
-    allowed = {}
+    free_at = {}
+
+    def free(h, xy):
+        """True where (x, y) is inside the room and nothing solid is at height h."""
+        if h not in free_at:
+            free_at[h] = inside & ~occ.solid_band(h - half_band, h + half_band)
+        ix = int(np.floor((xy[0] - occ.origin[0]) / occ.voxel))
+        iy = int(np.floor((xy[1] - occ.origin[1]) / occ.voxel))
+        return 0 <= ix < nx and 0 <= iy < ny and bool(free_at[h][ix, iy])
+
+    centre = np.array([plan.width_m / 2, plan.height_m / 2])
     spots, dropped = [], []
     for n, line in enumerate(lines):
         start, end = np.asarray(line["start"], float), np.asarray(line["end"], float)
         h = float(line["height_m"])
-        if h not in allowed:
-            blocked = occ.solid_band(h - half_band, h + half_band)
-            free = (inside & ~blocked).astype(np.uint8)
-            dist = cv2.distanceTransform(free, cv2.DIST_L2, 5) * occ.voxel
-            ii, jj = np.nonzero((free > 0) & (dist >= wall_gap))
-            allowed[h] = (np.column_stack([cx[ii], cy[jj]]), blocked.any())
-        cells, has_solid = allowed[h]
         length = float(np.linalg.norm(end - start))
+        mid = (start + end) / 2
+        if length < 1e-6:
+            # A single point: face away from the nearest solid, or the room centre.
+            if occ.solid_band(h - half_band, h + half_band).any():
+                yaw = wall_yaw(occ, mid, h, half_band)
+            else:
+                yaw = float(np.degrees(np.arctan2(*(centre - mid)[::-1])))
+        else:
+            u = (end - start) / length
+            normal = np.array([-u[1], u[0]])
+            votes = 0
+            for t in np.linspace(0, 1, 9):
+                p = start + t * (end - start)
+                for k in np.arange(0.3, 1.01, 0.1):
+                    votes += int(free(h, p + k * normal)) - int(free(h, p - k * normal))
+            if votes == 0:
+                votes = 1 if np.dot(centre - mid, normal) >= 0 else -1
+            out = normal if votes > 0 else -normal
+            yaw = float(np.degrees(np.arctan2(out[1], out[0])))
+        # Directions to check for a clear view; diagonals let a corner spot see out.
+        looks = [np.array([np.cos(a), np.sin(a)]) for a in np.radians(yaw + np.arange(-60, 61, 15))]
         if length < spacing:
-            samples = [(start + end) / 2]
+            samples = [mid]
         else:
             samples = np.linspace(start, end, int(round(length / spacing)) + 1)
         for xy in samples:
-            gaps = np.linalg.norm(cells - xy, axis=1) if len(cells) else np.array([np.inf])
-            shift = float(gaps.min())
-            if shift > max_shift:
+            xy = np.asarray(xy, float)
+            if not any(free(h, xy + view_clear_m * d) for d in looks):
                 dropped.append({"line": n, "xy": [float(v) for v in xy]})
                 continue
-            at = cells[int(np.argmin(gaps))]
-            if any(s["height"] == h and np.hypot(*(at - s["xy"])) < 0.1 for s in spots):
+            if any(s["height"] == h and np.hypot(*(xy - s["xy"])) < 0.1 for s in spots):
                 continue                                            # lines meeting at a corner
-            if has_solid:
-                yaw = wall_yaw(occ, at, h, half_band)
-            else:
-                yaw = float(np.degrees(np.arctan2(plan.height_m / 2 - at[1], plan.width_m / 2 - at[0])))
-            spots.append({"line": n, "xy": at.copy(), "height": h, "yaw": yaw, "shift_m": shift})
+            spots.append({"line": n, "xy": xy.copy(), "height": h, "yaw": yaw})
     return spots, dropped
 
 

@@ -105,8 +105,7 @@ def side_view(points, rgb, start, end, depth=0.4, px_per_m=SIDE_PX_PER_M, margin
 def preview(plan, occ, lines):
     """What the planner will make of these lines, as JSON-ready values."""
     spots, dropped = cov.spots_on_lines(plan, occ, lines)
-    return {"spots": [{"line": s["line"], "xy": [round(float(v), 3) for v in s["xy"]],
-                       "shift_m": round(s["shift_m"], 2)} for s in spots],
+    return {"spots": [{"line": s["line"], "xy": [round(float(v), 3) for v in s["xy"]]} for s in spots],
             "dropped": dropped}
 
 

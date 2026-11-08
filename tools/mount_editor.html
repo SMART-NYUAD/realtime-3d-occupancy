@@ -377,7 +377,7 @@ function drawMeta() {
     const lost = dropped.filter(d => d.line === i).length;
     meta.textContent = `(${fmt(l.start[0])}, ${fmt(l.start[1])}) to (${fmt(l.end[0])}, ${fmt(l.end[1])}), `
       + `${fmt(length(l))} m, ${n} spot${n === 1 ? "" : "s"}`
-      + (lost ? `, ${lost} with no free space nearby` : "");
+      + (lost ? `, ${lost} blocked by the scan in front` : "");
     meta.className = "meta" + (lost ? " warn" : "");
   });
 }
@@ -458,7 +458,7 @@ async function save() {
 }
 
 function summarise() {
-  const lost = dropped.length ? `, ${dropped.length} skipped (red crosses)` : "";
+  const lost = dropped.length ? `, ${dropped.length} skipped (red crosses: the scan blocks the view in front)` : "";
   setStatus(`Saved. ${lines.length} line${lines.length === 1 ? "" : "s"}, ${spots.length} camera spot${spots.length === 1 ? "" : "s"}${lost}.`);
   $("next").innerHTML = "";
   if (lines.length) {

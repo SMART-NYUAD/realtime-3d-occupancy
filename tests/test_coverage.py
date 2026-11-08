@@ -194,26 +194,35 @@ class TestMountLines(unittest.TestCase):
     def line(self, start, end, height=2.6):
         return {"start": start, "end": end, "height_m": height}
 
-    def test_line_on_a_wall_gives_spots_in_front_of_it(self):
+    def test_spots_lie_exactly_on_the_line_and_face_the_room(self):
         spots, dropped = cov.spots_on_lines(_Plan(), self.occ, [self.line([0, 1], [0, 3])])
         self.assertEqual(dropped, [])
-        self.assertEqual(len(spots), 5)                         # every 0.5 m, both ends
+        self.assertEqual([list(s["xy"]) for s in spots],        # every 0.5 m, both ends
+                         [[0.0, 1.0], [0.0, 1.5], [0.0, 2.0], [0.0, 2.5], [0.0, 3.0]])
         for s in spots:
             self.assertEqual(s["height"], 2.6)
-            self.assertGreater(s["xy"][0], 0.1)                 # moved off the wall
-            self.assertLess(s["xy"][0], 0.4)
-            self.assertLess(abs(s["yaw"]), 30)                  # facing into the room
+            self.assertAlmostEqual(s["yaw"], 0.0)               # into the room (+x)
+        # Drawn the other way, on the opposite wall, it still faces into the room.
+        east, _ = cov.spots_on_lines(_Plan(), self.occ, [self.line([6, 3], [6, 1])])
+        self.assertTrue(all(s["xy"][0] == 6.0 for s in east))
+        self.assertAlmostEqual(abs(east[0]["yaw"]), 180.0)
 
     def test_each_line_keeps_its_own_height(self):
         lines = [self.line([0, 1], [0, 2], 2.2), self.line([6, 4], [6, 5], 3.0)]
         spots, _ = cov.spots_on_lines(_Plan(), self.occ, lines)
         self.assertEqual({s["line"]: s["height"] for s in spots}, {0: 2.2, 1: 3.0})
 
-    def test_camera_above_a_cabinet_stays_over_it(self):
-        spots, _ = cov.spots_on_lines(_Plan(), self.occ, [self.line([2.5, 0.4], [2.5, 0.4], 2.3)])
-        self.assertLess(np.hypot(*(spots[0]["xy"] - [2.5, 0.4])), 0.15)
-        below, _ = cov.spots_on_lines(_Plan(), self.occ, [self.line([2.5, 0.4], [2.5, 0.4], 1.5)])
-        self.assertGreater(below[0]["xy"][1], 0.6)              # in front of it, not inside
+    def test_camera_on_a_cabinet_stays_on_its_line(self):
+        spots, dropped = cov.spots_on_lines(_Plan(), self.occ, [self.line([2.1, 0.5], [2.9, 0.5], 2.1)])
+        self.assertEqual(dropped, [])
+        self.assertTrue(all(s["xy"][1] == 0.5 for s in spots))
+        self.assertAlmostEqual(spots[0]["yaw"], 90.0)           # into the room (+y)
+
+    def test_line_inside_furniture_is_dropped(self):
+        occ = cov.Occupancy(room_points([box(3, 6, 2, 3.5, 0, 2.0)]))   # a deep free-standing block
+        spots, dropped = cov.spots_on_lines(_Plan(), occ, [self.line([4.2, 2.75], [4.8, 2.75], 1.0)])
+        self.assertEqual(spots, [])
+        self.assertEqual({d["line"] for d in dropped}, {0})
 
     def test_spot_far_from_free_space_is_dropped(self):
         spots, dropped = cov.spots_on_lines(_Plan(), self.occ, [self.line([-2, 3], [-2, 3])])
