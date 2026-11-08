@@ -16,11 +16,14 @@ lab scan (walls, shelves, monitors). Each spot is then:
 furniture) at a given height, over a range of directions and tilts, and ranks them
 by how much floor becomes "good". Everything is in the shared world frame.
 """
+import json
+
 import cv2
 import numpy as np
 
 UNSEEN, SINGLE, POOR, GOOD = 0, 1, 2, 3
 POSTURES = {"seated": (1.05, 1.30), "standing": (1.40, 1.62)}   # shoulder, head (m)
+MOUNT_HEIGHT_M = (0.5, 5.0)                                    # sensible camera heights
 
 
 class Occupancy:
@@ -274,10 +277,82 @@ def mount_spots(plan, occ, height, wall_gap=(0.15, 0.35), spacing=0.5, avoid=(),
     return np.array(chosen)
 
 
-def wall_yaw(occ, xy, height):
+def load_mount_lines(path):
+    """Read the lines drawn with tools/mount_editor.py. Raises ValueError if malformed."""
+    with open(path) as f:
+        return check_mount_lines(json.load(f).get("lines"))
+
+
+def check_mount_lines(lines):
+    """The mounting lines as [{"start": [x, y], "end": [x, y], "height_m": h}, ...]."""
+    if not isinstance(lines, list):
+        raise ValueError("expected a list of lines")
+    clean = []
+    for n, line in enumerate(lines, 1):
+        try:
+            start = [float(v) for v in line["start"]]
+            end = [float(v) for v in line["end"]]
+            height = float(line["height_m"])
+        except (KeyError, TypeError, ValueError) as e:
+            raise ValueError(f"line {n}: needs start, end and height_m") from e
+        if len(start) != 2 or len(end) != 2 or not np.isfinite(start + end + [height]).all():
+            raise ValueError(f"line {n}: start and end must be x, y in metres")
+        if not MOUNT_HEIGHT_M[0] <= height <= MOUNT_HEIGHT_M[1]:
+            raise ValueError(f"line {n}: height must be {MOUNT_HEIGHT_M[0]} to {MOUNT_HEIGHT_M[1]} m")
+        clean.append({"start": start, "end": end, "height_m": height})
+    return clean
+
+
+def spots_on_lines(plan, occ, lines, spacing=0.5, wall_gap=0.15, max_shift=0.6, half_band=0.1):
+    """Mounting spots every `spacing` m along hand-drawn lines, each at its line's
+    height. A line is drawn on the wall, but a camera sits in front of it, so a spot
+    moves to the nearest free space at least wall_gap m from anything solid at that
+    height; one with no such space within max_shift m is dropped. Only the scan within
+    half_band m of the camera's height counts, so a cabinet below it does not push it
+    away. Returns (spots, dropped): each spot has line (index), xy, height, yaw (facing
+    away from the nearest solid) and shift_m; each dropped one has line and xy."""
+    nx, ny = occ.shape[:2]
+    cx = occ.origin[0] + (np.arange(nx) + 0.5) * occ.voxel
+    cy = occ.origin[1] + (np.arange(ny) + 0.5) * occ.voxel
+    inside = np.array([[plan.in_valid_area(x, y) for y in cy] for x in cx])
+    allowed = {}
+    spots, dropped = [], []
+    for n, line in enumerate(lines):
+        start, end = np.asarray(line["start"], float), np.asarray(line["end"], float)
+        h = float(line["height_m"])
+        if h not in allowed:
+            blocked = occ.solid_band(h - half_band, h + half_band)
+            free = (inside & ~blocked).astype(np.uint8)
+            dist = cv2.distanceTransform(free, cv2.DIST_L2, 5) * occ.voxel
+            ii, jj = np.nonzero((free > 0) & (dist >= wall_gap))
+            allowed[h] = (np.column_stack([cx[ii], cy[jj]]), blocked.any())
+        cells, has_solid = allowed[h]
+        length = float(np.linalg.norm(end - start))
+        if length < spacing:
+            samples = [(start + end) / 2]
+        else:
+            samples = np.linspace(start, end, int(round(length / spacing)) + 1)
+        for xy in samples:
+            gaps = np.linalg.norm(cells - xy, axis=1) if len(cells) else np.array([np.inf])
+            shift = float(gaps.min())
+            if shift > max_shift:
+                dropped.append({"line": n, "xy": [float(v) for v in xy]})
+                continue
+            at = cells[int(np.argmin(gaps))]
+            if any(s["height"] == h and np.hypot(*(at - s["xy"])) < 0.1 for s in spots):
+                continue                                            # lines meeting at a corner
+            if has_solid:
+                yaw = wall_yaw(occ, at, h, half_band)
+            else:
+                yaw = float(np.degrees(np.arctan2(plan.height_m / 2 - at[1], plan.width_m / 2 - at[0])))
+            spots.append({"line": n, "xy": at.copy(), "height": h, "yaw": yaw, "shift_m": shift})
+    return spots, dropped
+
+
+def wall_yaw(occ, xy, height, half_band=0.25):
     """Map direction (degrees) pointing away from the nearest solid voxel at mounting
     height, i.e. into the room."""
-    band = occ.solid_band(height - 0.25, height + 0.25)
+    band = occ.solid_band(height - half_band, height + half_band)
     ii, jj = np.nonzero(band)
     cx = occ.origin[0] + (ii + 0.5) * occ.voxel
     cy = occ.origin[1] + (jj + 0.5) * occ.voxel
@@ -430,7 +505,7 @@ class LayoutSearch:
 
     def __init__(self, planner, lens, spots, height=2.5, tilts=(20, 28, 36, 44), yaw_span=75,
                  yaw_step=15, mirrored=False, current=(), min_separation_m=1.0,
-                 min_overlap_m2=2.0, seen_weight=0.25, min_tilt_deg=15.0):
+                 min_overlap_m2=2.0, seen_weight=0.25, min_tilt_deg=15.0, yaws=None):
         p = self.p = planner
         self.min_tilt_deg = min_tilt_deg
         tilts = [t for t in tilts if t >= min_tilt_deg] or [min_tilt_deg]
@@ -445,7 +520,7 @@ class LayoutSearch:
         cands, vis = [], []
         for i in range(len(spots)):
             C = self.P[i]
-            out = wall_yaw(p.occ, C[:2], C[2])
+            out = wall_yaw(p.occ, C[:2], C[2]) if yaws is None else yaws[i]
             for yaw in out + np.arange(-yaw_span, yaw_span + 1, yaw_step):
                 for tilt in tilts:
                     R = look_rotation(yaw, tilt, mirrored)

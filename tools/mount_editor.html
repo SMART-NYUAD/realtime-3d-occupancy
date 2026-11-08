@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera mounting lines</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #ffffff; --ink: #1d1f21; --muted: #62676d; --rule: #dcdcd8;
+    --line: #0b63ce; --selected: #d9480f; --bad: #c92a2a; --map: #3a3a3a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; grid-template-columns: minmax(0, 1fr) 340px; background: var(--bg); color: var(--ink);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  #stage { display: flex; flex-direction: column; height: 100vh; min-height: 0; background: var(--map); }
+  #mapbox { position: relative; flex: 1; min-height: 0; }
+  #svg { display: block; width: 100%; height: 100%; cursor: crosshair; user-select: none; touch-action: none; }
+  #side { flex: 0 0 auto; padding: 8px 12px 10px; background: #26272a; color: #f1f1ee; border-top: 1px solid #000; }
+  #side[hidden] { display: none; }
+  .sidehead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 6px; font-size: 13px; }
+  .sidehead strong { font-size: 14px; }
+  .sidehead .hint { color: #b9bab5; }
+  .sidehead label { margin-left: auto; color: #d6d6d2; }
+  .sidehead select { margin-left: 4px; font: inherit; }
+  #sidesvg { display: block; width: 100%; height: 34vh; min-height: 180px; cursor: ns-resize; user-select: none; touch-action: none; }
+  #sideimg { image-rendering: pixelated; }
+  .hgrid { stroke: rgba(255, 255, 255, .22); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .hlabel { fill: #fff; font-size: 13px; paint-order: stroke; stroke: rgba(0, 0, 0, .8); stroke-width: 3px; }
+  .endlabel { fill: #fff; font-size: 13px; font-weight: 600; paint-order: stroke; stroke: rgba(0, 0, 0, .8); stroke-width: 3px; }
+  .hline { stroke: var(--selected); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+  .hline.halo { stroke: #fff; stroke-width: 5; }
+  .hguide { stroke: #fff; stroke-width: 1; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+  .htag { fill: #fff; font-size: 14px; font-weight: 700; paint-order: stroke; stroke: var(--selected); stroke-width: 4px; }
+  .cam { fill: #fff; stroke: #111; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .lineend { stroke: #fff; stroke-width: 1.5; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  #map { image-rendering: pixelated; }
+  .grid { stroke: rgba(255, 255, 255, .28); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .axis { fill: #fff; font-size: 9px; paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 2.5px; }
+  .seg { stroke: var(--line); stroke-width: 4; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+  .seg.halo { stroke: #fff; stroke-width: 7; }
+  .seg.selected { stroke: var(--selected); }
+  .seg.draft { stroke-dasharray: 6 5; }
+  .hit { stroke: transparent; stroke-width: 18; vector-effect: non-scaling-stroke; cursor: pointer; }
+  .tag { fill: #fff; font-size: 9.5px; font-weight: 600; paint-order: stroke; stroke: var(--line); stroke-width: 3px; pointer-events: none; }
+  .tag.selected { stroke: var(--selected); }
+  .spot { fill: #fff; stroke: #111; stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
+  .drop { stroke: var(--bad); stroke-width: 2.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+  .handle { fill: #fff; stroke: var(--selected); stroke-width: 2.5; vector-effect: non-scaling-stroke; cursor: grab; }
+  #readout {
+    position: absolute; left: 12px; top: 12px; padding: 4px 8px; border-radius: 4px; color: #fff;
+    background: rgba(0, 0, 0, .65); font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  aside { display: flex; flex-direction: column; height: 100vh; min-height: 0; background: var(--panel); border-left: 1px solid var(--rule); }
+  header { padding: 14px 16px 12px; border-bottom: 1px solid var(--rule); }
+  h1 { margin: 0 0 6px; font-size: 16px; }
+  .help { margin: 0; color: var(--muted); font-size: 13px; }
+  kbd { padding: 0 4px; border: 1px solid var(--rule); border-radius: 3px; background: var(--bg); font: 12px inherit; }
+  #list { flex: 1; min-height: 0; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+  #list li { padding: 10px 16px; border-bottom: 1px solid var(--rule); border-left: 3px solid transparent; cursor: pointer; }
+  #list li.selected { border-left-color: var(--selected); background: #fff6f1; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .name { flex: 1; font-weight: 600; }
+  input[type=number] { width: 72px; padding: 4px 6px; border: 1px solid #b9b9b4; border-radius: 4px; font: inherit; }
+  input.invalid { border-color: var(--bad); outline: 1px solid var(--bad); }
+  .meta { margin-top: 3px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .meta.warn { color: var(--bad); }
+  button { padding: 4px 9px; border: 1px solid #b9b9b4; border-radius: 4px; background: #fff; color: var(--ink); font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--bg); }
+  button:disabled { color: #a5a5a0; cursor: default; }
+  .del { padding: 2px 8px; }
+  #empty { padding: 20px 16px; color: var(--muted); }
+  footer { padding: 12px 16px; border-top: 1px solid var(--rule); }
+  #status { min-height: 20px; margin: 0 0 8px; overflow-wrap: anywhere; font-size: 13px; }
+  #status.error { color: var(--bad); font-weight: 600; }
+  #next { margin: 8px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  code { font: 12px ui-monospace, Menlo, monospace; }
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    #stage { height: auto; }
+    #mapbox { height: 55vh; flex: none; }
+    aside { height: auto; border-left: 0; border-top: 1px solid var(--rule); }
+  }
+</style>
+</head>
+<body>
+<main id="stage">
+  <div id="mapbox">
+    <svg id="svg" role="application" aria-label="Lab map. Click twice to draw a mounting line."></svg>
+    <div id="readout">Loading the map</div>
+  </div>
+  <section id="side" hidden aria-label="Side view of the selected line">
+    <div class="sidehead">
+      <strong id="sidetitle">Side view</strong>
+      <span class="hint">Scan seen from the room. Click or drag to set the height; <kbd>↑</kbd> <kbd>↓</kbd> nudge 1 cm.</span>
+      <span id="sideread"></span>
+      <label>Show scan within
+        <select id="depth"></select>
+      </label>
+    </div>
+    <svg id="sidesvg" role="application" aria-label="Side view. Click to set the camera height."></svg>
+  </section>
+</main>
+<aside>
+  <header>
+    <h1>Camera mounting lines</h1>
+    <p class="help">Click the start and end of a place a camera can go, then set its height:
+      type it, or click the side view of the scan below the map.
+      Hold <kbd>Shift</kbd> for a straight horizontal or vertical line. <kbd>Esc</kbd> cancels.</p>
+  </header>
+  <ul id="list"></ul>
+  <div id="empty">No lines yet. The planner will only use the lines you draw here.</div>
+  <footer>
+    <p id="status" role="status"></p>
+    <button id="undo" disabled>Undo</button>
+    <p id="next"></p>
+  </footer>
+</aside>
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const $ = id => document.getElementById(id);
+const svg = $("svg");
+let map = null, file = "";
+let lines = [];              // {start: [x, y], end: [x, y], height_m}
+let spots = [], dropped = [];
+let selected = -1, draft = null, drag = null, cursor = null, shiftHeld = false;
+let undoStack = [], lastHeight = 2.5, saveTimer = null, saveSeq = 0;
+let sideAvailable = false, sideMeta = null, sideKey = "", sideTimer = null;
+let sideHover = null, sideGesture = null, gestures = 0;
+const LIMITS = [0.5, 5.0];
+
+const toPx = ([x, y]) => [(x + map.margin_m) * map.px_per_m, map.h - (y + map.margin_m) * map.px_per_m];
+const round = v => Math.round(v * 100) / 100;
+const fmt = v => Number(v).toFixed(2);
+const length = l => Math.hypot(l.end[0] - l.start[0], l.end[1] - l.start[1]);
+const heightOk = h => Number.isFinite(h) && h >= LIMITS[0] && h <= LIMITS[1];
+
+function toWorld(ev) {
+  const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse());
+  const x = Math.min(Math.max(p.x, 0), map.w), y = Math.min(Math.max(p.y, 0), map.h);
+  return [round(x / map.px_per_m - map.margin_m), round((map.h - y) / map.px_per_m - map.margin_m)];
+}
+
+// Shift keeps a line straight along the map's axes, measured from its other end.
+function straighten(point, from, on) {
+  if (!on || !from) return point;
+  return Math.abs(point[0] - from[0]) >= Math.abs(point[1] - from[1]) ? [point[0], from[1]] : [from[0], point[1]];
+}
+
+function el(name, attrs = {}, parent = svg) {
+  const node = document.createElementNS(NS, name);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  parent.appendChild(node);
+  return node;
+}
+
+function drawSeg(a, b, cls) {
+  const [x1, y1] = toPx(a), [x2, y2] = toPx(b);
+  return { x1, y1, x2, y2, class: cls };
+}
+
+function drawMap() {
+  svg.innerHTML = "";
+  svg.setAttribute("viewBox", `0 0 ${map.w} ${map.h}`);
+  el("image", { id: "map", href: "/map.png", width: map.w, height: map.h });
+  for (let m = 0; m <= map.width_m; m++) {
+    el("line", drawSeg([m, 0], [m, map.height_m], "grid"));
+    const [x, y] = toPx([m, 0]);
+    el("text", { x, y: y + 11, class: "axis", "text-anchor": "middle" }).textContent = m;
+  }
+  for (let m = 0; m <= map.height_m; m++) {
+    el("line", drawSeg([0, m], [map.width_m, m], "grid"));
+    const [x, y] = toPx([0, m]);
+    el("text", { x: x - 5, y: y + 3, class: "axis", "text-anchor": "end" }).textContent = m;
+  }
+  lines.forEach((l, i) => {
+    const on = i === selected;
+    el("line", drawSeg(l.start, l.end, "seg halo"));
+    el("line", drawSeg(l.start, l.end, "seg" + (on ? " selected" : "")));
+    const hit = el("line", drawSeg(l.start, l.end, "hit"));
+    hit.dataset.line = i;
+    const [ax, ay] = toPx(l.start), [bx, by] = toPx(l.end);
+    const tag = el("text", { x: (ax + bx) / 2 + 5, y: (ay + by) / 2 - 5, class: "tag" + (on ? " selected" : "") });
+    tag.textContent = `L${i + 1}  ${heightOk(l.height_m) ? fmt(l.height_m) + " m" : "height?"}`;
+  });
+  for (const s of spots) {
+    const [cx, cy] = toPx(s.xy);
+    el("circle", { cx, cy, r: 2.6, class: "spot" });
+  }
+  for (const d of dropped) {
+    const [x, y] = toPx(d.xy), r = 4;
+    el("line", { x1: x - r, y1: y - r, x2: x + r, y2: y + r, class: "drop" });
+    el("line", { x1: x - r, y1: y + r, x2: x + r, y2: y - r, class: "drop" });
+  }
+  if (draft && cursor) {
+    const end = straighten(cursor, draft, shiftHeld);
+    el("line", drawSeg(draft, end, "seg halo draft"));
+    el("line", drawSeg(draft, end, "seg selected draft"));
+  }
+  if (selected >= 0 && !draft) {
+    for (const end of ["start", "end"]) {
+      const [cx, cy] = toPx(lines[selected][end]);
+      const h = el("circle", { cx, cy, r: 5, class: "handle" });
+      h.dataset.end = end;
+    }
+  }
+  drawReadout();
+  if (!drag) refreshSide();
+}
+
+// ---- side view: the scan along the selected line, floor to ceiling ----
+function refreshSide() {
+  const box = $("side");
+  if (!sideAvailable || selected < 0 || draft) { box.hidden = true; return; }
+  box.hidden = false;
+  const l = lines[selected];
+  $("sidetitle").textContent = `Side view of L${selected + 1}`;
+  const key = [l.start, l.end, $("depth").value].join("|");
+  if (key !== sideKey) {
+    sideKey = key;
+    sideMeta = null;
+    clearTimeout(sideTimer);
+    sideTimer = setTimeout(() => loadSide(l, key), 120);
+  }
+  drawSide();
+}
+
+async function loadSide(l, key) {
+  const q = new URLSearchParams({ x1: l.start[0], y1: l.start[1], x2: l.end[0], y2: l.end[1], depth: $("depth").value });
+  let meta;
+  try {
+    const res = await fetch(`/side?${q}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    meta = data;
+  } catch (e) {
+    meta = { error: e.message };
+  }
+  if (key !== sideKey) return;
+  sideMeta = meta;
+  drawSide();
+}
+
+// The image may be mirrored so the wall looks as it does from inside the room.
+const sideX = s => (sideMeta.mirrored ? sideMeta.s1 - s : s - sideMeta.s0) * sideMeta.px_per_m;
+const sideY = z => (sideMeta.z1 - z) * sideMeta.px_per_m;
+
+function sideZ(ev) {
+  const sv = $("sidesvg");
+  const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(sv.getScreenCTM().inverse());
+  return round(sideMeta.z1 - p.y / sideMeta.px_per_m);
+}
+
+function drawSide() {
+  const sv = $("sidesvg"), read = $("sideread");
+  sv.innerHTML = "";
+  if (selected < 0) return;
+  if (!sideMeta) { read.textContent = "Loading the scan"; return; }
+  if (sideMeta.error) { read.textContent = `Could not show the scan: ${sideMeta.error}`; return; }
+  const m = sideMeta, l = lines[selected];
+  sv.setAttribute("viewBox", `0 0 ${m.w} ${m.h}`);
+  // Keep text and markers the same size on screen whatever the line's length.
+  const k = Math.max(m.w / Math.max(sv.clientWidth, 1), m.h / Math.max(sv.clientHeight, 1));
+  el("image", { id: "sideimg", href: `data:image/png;base64,${m.png}`, width: m.w, height: m.h }, sv);
+  for (let z = 0; z <= m.z1; z += 0.5) {
+    el("line", { x1: 0, x2: m.w, y1: sideY(z), y2: sideY(z), class: "hgrid" }, sv);
+    el("text", { x: 4 * k, y: sideY(z) - 3 * k, class: "hlabel", "font-size": 13 * k,
+                 "stroke-width": 3 * k }, sv).textContent = `${z.toFixed(1)} m`;
+  }
+  const len = length(l);
+  for (const [s, p] of [[0, l.start], [len, l.end]]) {
+    el("line", { x1: sideX(s), x2: sideX(s), y1: 0, y2: m.h, class: "lineend" }, sv);
+    el("text", { x: sideX(s) + (sideX(s) < m.w / 2 ? 4 : -4) * k, y: m.h - 6 * k, class: "endlabel",
+                 "text-anchor": sideX(s) < m.w / 2 ? "start" : "end", "font-size": 13 * k,
+                 "stroke-width": 3 * k }, sv).textContent = `(${fmt(p[0])}, ${fmt(p[1])})`;
+  }
+  if (sideHover !== null) {
+    el("line", { x1: 0, x2: m.w, y1: sideY(sideHover), y2: sideY(sideHover), class: "hguide" }, sv);
+  }
+  if (heightOk(l.height_m)) {
+    const y = sideY(l.height_m);
+    el("line", { x1: sideX(0), x2: sideX(len), y1: y, y2: y, class: "hline halo" }, sv);
+    el("line", { x1: sideX(0), x2: sideX(len), y1: y, y2: y, class: "hline" }, sv);
+    const [ax, ay] = l.start, ux = (l.end[0] - ax) / (len || 1), uy = (l.end[1] - ay) / (len || 1);
+    for (const s of spots.filter(s => s.line === selected)) {
+      const along = (s.xy[0] - ax) * ux + (s.xy[1] - ay) * uy;
+      el("circle", { cx: sideX(along), cy: y, r: 4.5 * k, class: "cam" }, sv);
+    }
+    const right = Math.max(sideX(0), sideX(len));
+    el("text", { x: Math.min(right, m.w - 60 * k), y: y - 7 * k, class: "htag", "font-size": 14 * k,
+                 "stroke-width": 4 * k }, sv).textContent = `${fmt(l.height_m)} m`;
+  }
+  read.textContent = sideHover !== null ? `Pointer at ${fmt(sideHover)} m` : "";
+}
+
+function setHeight(h, key) {
+  if (selected < 0) return;
+  h = round(Math.min(Math.max(h, LIMITS[0]), LIMITS[1]));
+  const l = lines[selected];
+  if (l.height_m === h) return;
+  pushUndoOnce(key);
+  l.height_m = h;
+  lastHeight = h;
+  const input = document.querySelector(`#list li[data-line="${selected}"] input`);
+  if (input) { input.value = h; input.className = ""; }
+  drawMap();
+  changed();
+}
+
+function drawReadout() {
+  const r = $("readout");
+  if (!cursor) { r.textContent = draft ? "Click the end of the line" : "Click the start of a line"; return; }
+  const p = draft ? straighten(cursor, draft, shiftHeld) : cursor;
+  const len = draft ? `, length ${fmt(Math.hypot(p[0] - draft[0], p[1] - draft[1]))} m` : "";
+  r.textContent = `x ${fmt(p[0])}, y ${fmt(p[1])}${len}`;
+}
+
+function drawList() {
+  const list = $("list");
+  list.innerHTML = "";
+  $("empty").hidden = lines.length > 0;
+  lines.forEach((l, i) => {
+    const li = document.createElement("li");
+    li.className = i === selected ? "selected" : "";
+    li.dataset.line = i;
+    const row = document.createElement("div");
+    row.className = "row";
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = `L${i + 1}`;
+    const label = document.createElement("label");
+    label.textContent = "Height ";
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = LIMITS[0]; input.max = LIMITS[1]; input.step = "0.01";
+    input.value = l.height_m;
+    input.setAttribute("aria-label", `Height of line ${i + 1} in metres`);
+    input.className = heightOk(l.height_m) ? "" : "invalid";
+    input.addEventListener("focus", () => { selectLine(i, false); input.select(); });
+    input.addEventListener("input", () => {
+      pushUndoOnce(`h${i}`);
+      l.height_m = parseFloat(input.value);
+      const ok = heightOk(l.height_m);
+      input.className = ok ? "" : "invalid";
+      if (ok) lastHeight = l.height_m;
+      drawMap();
+      changed();
+    });
+    input.addEventListener("keydown", ev => { if (ev.key === "Enter") input.blur(); });
+    label.appendChild(input);
+    label.append(" m");
+    const del = document.createElement("button");
+    del.className = "del";
+    del.textContent = "Delete";
+    del.setAttribute("aria-label", `Delete line ${i + 1}`);
+    del.addEventListener("click", ev => { ev.stopPropagation(); removeLine(i); });
+    row.append(name, label, del);
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.id = `meta${i}`;
+    li.append(row, meta);
+    li.addEventListener("click", () => selectLine(i));
+    list.appendChild(li);
+  });
+  drawMeta();
+}
+
+function drawMeta() {
+  lines.forEach((l, i) => {
+    const meta = $(`meta${i}`);
+    if (!meta) return;
+    const n = spots.filter(s => s.line === i).length;
+    const lost = dropped.filter(d => d.line === i).length;
+    meta.textContent = `(${fmt(l.start[0])}, ${fmt(l.start[1])}) to (${fmt(l.end[0])}, ${fmt(l.end[1])}), `
+      + `${fmt(length(l))} m, ${n} spot${n === 1 ? "" : "s"}`
+      + (lost ? `, ${lost} with no free space nearby` : "");
+    meta.className = "meta" + (lost ? " warn" : "");
+  });
+}
+
+function selectLine(i, redrawList = true) {
+  if (selected === i) return;
+  selected = i;
+  drawMap();
+  if (redrawList) drawList();
+  else document.querySelectorAll("#list li").forEach(li => {
+    li.className = Number(li.dataset.line) === i ? "selected" : "";
+  });
+}
+
+let undoKey = null;
+function pushUndo() {
+  undoStack.push(JSON.stringify(lines));
+  if (undoStack.length > 100) undoStack.shift();
+  $("undo").disabled = false;
+  undoKey = null;
+}
+// Typing "2.65" is one change to undo, not four.
+function pushUndoOnce(key) {
+  if (undoKey !== key) { pushUndo(); undoKey = key; }
+}
+function undo() {
+  if (!undoStack.length) return;
+  lines = JSON.parse(undoStack.pop());
+  $("undo").disabled = !undoStack.length;
+  undoKey = null;
+  if (selected >= lines.length) selected = -1;   // keep the line you were working on
+  draft = null;
+  spots = []; dropped = [];
+  drawMap(); drawList(); changed();
+}
+
+function removeLine(i) {
+  pushUndo();
+  lines.splice(i, 1);
+  selected = -1;
+  spots = []; dropped = [];
+  drawMap(); drawList(); changed();
+}
+
+function setStatus(text, error = false) {
+  const s = $("status");
+  s.textContent = text;
+  s.className = error ? "error" : "";
+}
+
+// Every change is saved shortly after it is made, and the server answers with the
+// spots the planner will use.
+function changed() {
+  clearTimeout(saveTimer);
+  if (lines.some(l => !heightOk(l.height_m))) {
+    setStatus(`Not saved: heights must be ${LIMITS[0]} to ${LIMITS[1]} m.`, true);
+    return;
+  }
+  setStatus("Saving");
+  saveTimer = setTimeout(save, 250);
+}
+
+async function save() {
+  const seq = ++saveSeq;
+  try {
+    const res = await fetch("/lines", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines }),
+    });
+    const data = await res.json();
+    if (seq !== saveSeq) return;
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    spots = data.spots; dropped = data.dropped;
+    summarise();
+    drawMap(); drawMeta();
+  } catch (e) {
+    if (seq === saveSeq) setStatus(`Not saved: ${e.message}. Check the tool is still running in the terminal.`, true);
+  }
+}
+
+function summarise() {
+  const lost = dropped.length ? `, ${dropped.length} skipped (red crosses)` : "";
+  setStatus(`Saved. ${lines.length} line${lines.length === 1 ? "" : "s"}, ${spots.length} camera spot${spots.length === 1 ? "" : "s"}${lost}.`);
+  $("next").innerHTML = "";
+  if (lines.length) {
+    const code = document.createElement("code");
+    code.textContent = `python tools/layout_planner.py --mount-lines ${file}`;
+    $("next").append("Next: ", code);
+  }
+}
+
+// Otherwise the press that finishes a line takes focus back from its height box.
+svg.addEventListener("mousedown", ev => ev.preventDefault());
+
+svg.addEventListener("pointerdown", ev => {
+  if (!map || ev.button !== 0) return;
+  document.activeElement.blur();
+  shiftHeld = ev.shiftKey;
+  const t = ev.target;
+  if (!draft && t.dataset.end) {
+    pushUndo();
+    drag = { line: selected, end: t.dataset.end };
+    svg.setPointerCapture(ev.pointerId);
+    return;
+  }
+  if (!draft && t.dataset.line !== undefined) {
+    selectLine(Number(t.dataset.line));
+    return;
+  }
+  const p = toWorld(ev);
+  if (!draft) {
+    draft = p; cursor = p;
+    selected = -1;
+    drawMap(); drawList();
+    return;
+  }
+  const end = straighten(p, draft, ev.shiftKey);
+  if (Math.hypot(end[0] - draft[0], end[1] - draft[1]) < 0.05) return;
+  pushUndo();
+  lines.push({ start: draft, end, height_m: lastHeight });
+  draft = null;
+  selected = lines.length - 1;
+  drawMap(); drawList(); changed();
+  const input = $("list").lastChild.querySelector("input");
+  input.focus();
+  input.scrollIntoView({ block: "nearest" });
+});
+
+svg.addEventListener("pointermove", ev => {
+  if (!map) return;
+  shiftHeld = ev.shiftKey;
+  cursor = toWorld(ev);
+  if (drag) {
+    const l = lines[drag.line];
+    const other = drag.end === "start" ? l.end : l.start;
+    l[drag.end] = straighten(cursor, other, ev.shiftKey);
+    drawMap(); drawMeta();
+  } else if (draft) {
+    drawMap();
+  } else {
+    drawReadout();
+  }
+});
+
+svg.addEventListener("pointerup", () => {
+  if (!drag) return;
+  drag = null;
+  changed();
+  refreshSide();
+});
+
+const sidesvg = $("sidesvg");
+sidesvg.addEventListener("mousedown", ev => ev.preventDefault());
+sidesvg.addEventListener("pointerdown", ev => {
+  if (selected < 0 || !sideMeta || sideMeta.error || ev.button !== 0) return;
+  document.activeElement.blur();
+  sideGesture = `side${++gestures}`;
+  sidesvg.setPointerCapture(ev.pointerId);
+  setHeight(sideZ(ev), sideGesture);
+});
+sidesvg.addEventListener("pointermove", ev => {
+  if (selected < 0 || !sideMeta || sideMeta.error) return;
+  sideHover = sideZ(ev);
+  if (sideGesture) setHeight(sideHover, sideGesture);
+  else drawSide();
+});
+sidesvg.addEventListener("pointerup", () => { sideGesture = null; });
+sidesvg.addEventListener("pointerleave", () => {
+  if (sideGesture) return;
+  sideHover = null;
+  if (sideMeta && !sideMeta.error) drawSide();
+});
+$("depth").addEventListener("change", () => { $("depth").blur(); refreshSide(); });
+window.addEventListener("resize", () => { if (sideMeta && !sideMeta.error) drawSide(); });
+
+svg.addEventListener("pointerleave", () => {
+  if (drag) return;
+  cursor = null;
+  if (draft) drawMap(); else drawReadout();
+});
+
+document.addEventListener("keydown", ev => {
+  const typing = ev.target.tagName === "INPUT";
+  if (ev.key === "Shift" && draft) { shiftHeld = true; drawMap(); }
+  if (ev.key === "Escape") {
+    if (typing) ev.target.blur();
+    draft = null;
+    selected = -1;
+    drawMap(); drawList();
+  } else if (!typing && (ev.key === "Delete" || ev.key === "Backspace") && selected >= 0) {
+    ev.preventDefault();
+    removeLine(selected);
+  } else if (!typing && (ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") {
+    ev.preventDefault();
+    undo();
+  } else if (!typing && (ev.key === "ArrowUp" || ev.key === "ArrowDown") && selected >= 0 && !draft
+             && heightOk(lines[selected].height_m) && ev.target.tagName !== "SELECT") {
+    ev.preventDefault();
+    const step = (ev.shiftKey ? 0.1 : 0.01) * (ev.key === "ArrowUp" ? 1 : -1);
+    setHeight(lines[selected].height_m + step, `nudge${selected}`);
+  }
+});
+document.addEventListener("keyup", ev => {
+  if (ev.key === "Shift" && draft) { shiftHeld = false; drawMap(); }
+});
+$("undo").addEventListener("click", undo);
+
+(async function start() {
+  try {
+    const res = await fetch("/state");
+    if (!res.ok) throw new Error(res.statusText);
+    const state = await res.json();
+    map = state.map; file = state.file;
+    lines = state.lines; spots = state.spots; dropped = state.dropped;
+    sideAvailable = state.side_view;
+    for (const d of state.depths_m || []) {
+      const opt = new Option(`${d} m of the line`, d);
+      opt.selected = d === 0.4;
+      $("depth").add(opt);
+    }
+    if (lines.length) lastHeight = lines[lines.length - 1].height_m;
+    drawMap(); drawList();
+    if (lines.length) summarise();
+  } catch (e) {
+    $("readout").textContent = "Could not load";
+    setStatus(`Could not load the saved lines: ${e.message}. Check the terminal for errors.`, true);
+  }
+})();
+</script>
+</body>
+</html>

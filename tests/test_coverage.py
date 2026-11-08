@@ -4,6 +4,7 @@ mounting-spot search on a synthetic room, and the real scan lining up with the m
 Run:  python -m unittest tests/test_coverage.py -v
 """
 from pathlib import Path
+import base64
 import json
 import os
 import subprocess
@@ -184,6 +185,147 @@ class TestWeights(unittest.TestCase):
         self.assertGreaterEqual(good_in_corner[1], good_in_corner[0])
 
 
+class TestMountLines(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # A tall cabinet against the wall at x 2-3, y 0-0.6, topping out at 2.0 m.
+        cls.occ = cov.Occupancy(room_points([box(2, 3, 0, 0.6, 0, 2.0)]))
+
+    def line(self, start, end, height=2.6):
+        return {"start": start, "end": end, "height_m": height}
+
+    def test_line_on_a_wall_gives_spots_in_front_of_it(self):
+        spots, dropped = cov.spots_on_lines(_Plan(), self.occ, [self.line([0, 1], [0, 3])])
+        self.assertEqual(dropped, [])
+        self.assertEqual(len(spots), 5)                         # every 0.5 m, both ends
+        for s in spots:
+            self.assertEqual(s["height"], 2.6)
+            self.assertGreater(s["xy"][0], 0.1)                 # moved off the wall
+            self.assertLess(s["xy"][0], 0.4)
+            self.assertLess(abs(s["yaw"]), 30)                  # facing into the room
+
+    def test_each_line_keeps_its_own_height(self):
+        lines = [self.line([0, 1], [0, 2], 2.2), self.line([6, 4], [6, 5], 3.0)]
+        spots, _ = cov.spots_on_lines(_Plan(), self.occ, lines)
+        self.assertEqual({s["line"]: s["height"] for s in spots}, {0: 2.2, 1: 3.0})
+
+    def test_camera_above_a_cabinet_stays_over_it(self):
+        spots, _ = cov.spots_on_lines(_Plan(), self.occ, [self.line([2.5, 0.4], [2.5, 0.4], 2.3)])
+        self.assertLess(np.hypot(*(spots[0]["xy"] - [2.5, 0.4])), 0.15)
+        below, _ = cov.spots_on_lines(_Plan(), self.occ, [self.line([2.5, 0.4], [2.5, 0.4], 1.5)])
+        self.assertGreater(below[0]["xy"][1], 0.6)              # in front of it, not inside
+
+    def test_spot_far_from_free_space_is_dropped(self):
+        spots, dropped = cov.spots_on_lines(_Plan(), self.occ, [self.line([-2, 3], [-2, 3])])
+        self.assertEqual(spots, [])
+        self.assertEqual(dropped[0]["line"], 0)
+
+    def test_lines_meeting_at_a_corner_share_a_spot(self):
+        lines = [self.line([0, 0], [0, 1]), self.line([0, 0], [1, 0])]
+        spots, _ = cov.spots_on_lines(_Plan(), self.occ, lines)
+        xy = [s["xy"] for s in spots]
+        gaps = [np.hypot(*(a - b)) for i, a in enumerate(xy) for b in xy[i + 1:]]
+        self.assertGreaterEqual(min(gaps), 0.1)
+
+    def test_bad_lines_are_refused(self):
+        for bad in (None, [{"start": [0, 0], "end": [1, 1]}],
+                    [self.line([0, 0, 0], [1, 1])], [self.line([0, 0], [1, 1], 9)],
+                    [self.line([0, float("nan")], [1, 1])]):
+            with self.assertRaises(ValueError):
+                cov.check_mount_lines(bad)
+
+    def test_search_only_uses_spots_on_the_lines(self):
+        lines = [self.line([0, 1], [0, 5], 2.4), self.line([6, 1], [6, 5], 2.8)]
+        spots, _ = cov.spots_on_lines(_Plan(), self.occ, lines)
+        empty = cov.Planner([], cov.FloorGrid(_Plan(), 0.5), self.occ)
+        search = cov.LayoutSearch(empty, LENS, [[*s["xy"], s["height"]] for s in spots],
+                                  yaws=[s["yaw"] for s in spots])
+        cams, _ = search.run(2, restarts=1)
+        marked = {(round(float(s["xy"][0]), 3), round(float(s["xy"][1]), 3), s["height"]) for s in spots}
+        for c in cams:
+            self.assertIn((round(float(c["C"][0]), 3), round(float(c["C"][1]), 3), float(c["C"][2])), marked)
+
+    def test_side_view_shows_the_scan_along_a_line(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import mount_editor
+        pts = room_points([box(2, 3, 0, 0.6, 0, 2.0)])          # cabinet against the south wall
+        img, m = mount_editor.side_view(pts, None, (0, 0), (6, 0), depth=0.4)
+        self.assertEqual(img.shape[:2], (m["h"], m["w"]))
+        self.assertFalse(m["mirrored"])
+
+        def pixel(im, s, z):
+            return im[int((m["z1"] - z) * m["px_per_m"]), int((s - m["s0"]) * m["px_per_m"])]
+
+        self.assertGreater(int(pixel(img, 1.0, 2.5).max()), 40)   # the wall, drawn
+        self.assertEqual(int(pixel(img, 1.0, m["z1"] - 0.02).max()), 40)   # above it: empty
+        # Only scan near the line counts: a box 1 m into the room shows only when the
+        # depth reaches it.
+        far = box(2, 3, 1.0, 1.2, 0, 1.0)
+        none, _ = mount_editor.side_view(far, None, (0, 0), (6, 0), depth=0.4)
+        some, _ = mount_editor.side_view(far, None, (0, 0), (6, 0), depth=1.2)
+        self.assertEqual(int(none.max()), 40)
+        self.assertGreater(int(some.max()), 40)
+        # Seen from the room, which is on the line's left here, the view is mirrored.
+        self.assertEqual(mount_editor.room_side(_Plan(), (0, 0), (6, 0)), 1)
+        self.assertEqual(mount_editor.room_side(_Plan(), (6, 0), (0, 0)), -1)
+        flipped, fm = mount_editor.side_view(pts, None, (0, 0), (6, 0), depth=0.4, viewer_side=1)
+        self.assertTrue(fm["mirrored"])
+        self.assertTrue((flipped == img[:, ::-1]).all())
+
+    def test_editor_saves_lines_and_returns_spots(self):
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from urllib.error import HTTPError
+        from urllib.request import Request, urlopen
+        sys.path.insert(0, str(ROOT / "tools"))
+        import mount_editor
+
+        class Plan(_Plan):
+            def background(self):
+                return np.zeros((350, 350, 3), np.uint8)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "lines.json")
+            server = ThreadingHTTPServer(("127.0.0.1", 0),
+                                         mount_editor.make_handler(Plan(), self.occ, path,
+                                                                   room_points(), None))
+            Thread(target=server.serve_forever, daemon=True).start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            try:
+                def post(body, kind="application/json"):
+                    return urlopen(Request(base + "/lines", json.dumps(body).encode(),
+                                           {"Content-Type": kind}), timeout=10)
+
+                self.assertEqual(json.load(urlopen(base + "/state", timeout=10))["lines"], [])
+                self.assertIn(b"<svg", urlopen(base + "/", timeout=10).read())
+                self.assertEqual(urlopen(base + "/map.png", timeout=10).read(4), b"\x89PNG")
+                lines = [self.line([0, 1], [0, 2])]
+                result = json.load(post({"lines": lines}))
+                self.assertEqual(len(result["spots"]), 3)
+                self.assertEqual(cov.load_mount_lines(path), lines)
+                self.assertEqual(json.load(urlopen(base + "/state", timeout=10))["lines"], lines)
+                for body, kind, code in (({"lines": [self.line([0, 1], [0, 2], 99)]},
+                                          "application/json", 400),
+                                         ({"lines": []}, "text/plain", 404)):
+                    with self.assertRaises(HTTPError) as err:
+                        post(body, kind)
+                    self.assertEqual(err.exception.code, code)
+                self.assertEqual(cov.load_mount_lines(path), lines)      # refused ones not saved
+                state = json.load(urlopen(base + "/state", timeout=10))
+                self.assertTrue(state["side_view"])
+                side = json.load(urlopen(base + "/side?x1=0&y1=0&x2=6&y2=0&depth=0.4", timeout=10))
+                self.assertTrue(side["mirrored"])
+                self.assertEqual(base64.b64decode(side["png"])[:4], b"\x89PNG")
+                for bad in ("x1=0&y1=0&x2=6&y2=0&depth=0.3", "x1=0&y1=0&x2=99&y2=0&depth=0.4",
+                            "x1=nan&y1=0&x2=6&y2=0&depth=0.4", "x1=0&y1=0&x2=6"):
+                    with self.assertRaises(HTTPError) as err:
+                        urlopen(base + "/side?" + bad, timeout=10)
+                    self.assertEqual(err.exception.code, 400, bad)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+
 class TestLayoutSearch(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -310,6 +452,48 @@ class TestRealScan(unittest.TestCase):
             cams = plan["layouts"][0]["cameras"]
             self.assertEqual(len(cams), 4)
             self.assertEqual(sum(c["kept"] for c in cams), 3)
+
+    def test_layout_cli_with_mount_lines(self):
+        with tempfile.TemporaryDirectory() as out:
+            lines = os.path.join(out, "lines.json")
+            with open(lines, "w") as f:
+                json.dump({"lines": [{"start": [7.8, 7], "end": [7.8, 9], "height_m": 2.3},
+                                     {"start": [3, 10.2], "end": [6, 10.2], "height_m": 2.9}]}, f)
+            r = subprocess.run([sys.executable, "tools/layout_planner.py", "--out", out,
+                                "--restarts", "1", "--cameras", "2", "--mount-lines", lines,
+                                "--min-overlap", "0"],
+                               cwd=ROOT, capture_output=True, text=True, timeout=300)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(os.path.join(out, "layout_plan.json")) as f:
+                plan = json.load(f)
+            cams = plan["layouts"][0]["cameras"]
+            self.assertEqual(len(cams), 2)
+            self.assertEqual(sorted(c["position_m"][2] for c in cams), [2.3, 2.9])
+            self.assertFalse(any(c["current_camera"] for c in cams))
+            self.assertEqual(len(plan["mount_lines"]), 2)
+            self.assertEqual({c["mount_line"] for c in cams}, {1, 2})
+
+    def test_layout_cli_runs_keeps_the_best(self):
+        with tempfile.TemporaryDirectory() as out:
+            lines = os.path.join(out, "lines.json")
+            with open(lines, "w") as f:
+                json.dump({"lines": [{"start": [7.8, 5], "end": [7.8, 9], "height_m": 2.4},
+                                     {"start": [2, 10.2], "end": [6, 10.2], "height_m": 2.6}]}, f)
+            r = subprocess.run([sys.executable, "tools/layout_planner.py", "--out", out,
+                                "--restarts", "1", "--cameras", "2", "--runs", "2", "--seed", "3",
+                                "--mount-lines", lines, "--min-overlap", "0",
+                                "--weight", "2,2,8,10,2"],
+                               cwd=ROOT, capture_output=True, text=True, timeout=300)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(os.path.join(out, "layout_plan.json")) as f:
+                plan = json.load(f)
+            self.assertEqual([run["seed"] for run in plan["runs"]], [3, 4])
+            best = max(plan["runs"], key=lambda run: run["score"])
+            self.assertEqual(plan["best_seed"], best["seed"])
+            self.assertEqual(plan["layouts"][0]["score"], best["score"])
+            self.assertEqual(best["largest_move_from_best_m"], 0.0)
+            self.assertEqual(plan["agreement"]["runs"], 2)
+            self.assertEqual(set(plan["layouts"][0]["zones"]), {"whole room", "2,2,8,10"})
 
 
 if __name__ == "__main__":

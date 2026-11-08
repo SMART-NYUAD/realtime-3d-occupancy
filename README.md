@@ -364,6 +364,10 @@ time; drag points until your dot lands on your true spot **and** the cameras agr
    and prints where to mount each option, which way to face it and how far to tilt
    it. To weigh moving the existing cameras too, `tools/layout_planner.py
    --variants` finds the best layout of all cameras for each number kept in place.
+   To limit it to the places a camera can really go, mark them first:
+   `python tools/mount_editor.py` lets you draw lines on the map and pick each one's
+   height from a side view of the scan along it, and `tools/layout_planner.py --mount-lines data/mount_lines.json` then
+   only places cameras on those lines.
    The scan is a snapshot, so check the live view before drilling. Results for the
    current three cameras are in [`docs/coverage/`](docs/coverage/README.md).
 2. **Give the camera the same setup as the others:** RTSP at 1080p on a fixed IP,
@@ -816,6 +820,7 @@ people_tracker_3d/
 │   ├── check_sync.py        measure live cross-camera skew
 │   ├── coverage_planner.py  rate coverage, rank places for a new camera
 │   ├── layout_planner.py    best positions for the whole camera set
+│   ├── mount_editor.py      draw where cameras can be mounted, with heights
 │   ├── tracking_metrics.py  tracking quality from a --log-csv log
 │   ├── replay_tracking.py   replay a recorded session (fixes on / --legacy)
 │   ├── simulate_busy_scene.py  old vs new tracking on a simulated scene
@@ -850,7 +855,8 @@ people_tracker_3d/
 | `python tools/replay_tracking.py SESSION --out new.csv [--legacy]` | Replay a recorded session offline with the fixes on (or `--legacy` off) |
 | `python tools/simulate_busy_scene.py [--seeds ...] [--miss 0.25]` | Old vs new tracking on a simulated scene (two seated people, one walker); reproduces the report figures |
 | `python tools/coverage_planner.py [--posture standing] [--spot x,y] [--weight x1,y1,x2,y2,w]` | Rate camera coverage from the lab scan and rank places for a new camera (weighted areas count more) |
-| `python tools/layout_planner.py [--keep yi04] [--variants] [--weight x1,y1,x2,y2,w]` | Best positions for all cameras at once (some kept in place, or none) |
+| `python tools/layout_planner.py [--keep yi04] [--variants] [--weight x1,y1,x2,y2,w] [--mount-lines file]` | Best positions for all cameras at once (some kept in place, or none) |
+| `python tools/mount_editor.py` | Draw the lines where cameras can be mounted in your browser, picking each height from a side view of the scan |
 | `python -m unittest tests/test_coverage.py -v` | Coverage planner tests (visibility, blocking, angles, search, scan alignment) |
 
 ---

@@ -222,15 +222,23 @@ def load_plan(cfg):
     return plan
 
 
-def load_scan_points(cfg):
+def load_scan_points(cfg, colours=False):
     """The lab scan as (N, 3) points in the world frame: x, y in map meters and z =
     height above the floor. Uses the same axis choice, flips and footprint clipping
     as PointCloudPlan._build, so the points line up with the map and calibrations.
-    The floor is the most populated 2 cm height slab in the lowest 10% of points."""
+    The floor is the most populated 2 cm height slab in the lowest 10% of points.
+    With colours, returns (points, rgb) where rgb is (N, 3) uint8, or None if the
+    scan has no colour."""
     import laspy
     fpc = cfg["floorplan"]
     las = laspy.read(fpc.get("pointcloud_file", "data/smart_lab.las"))
     pts = np.vstack([las.x, las.y, las.z]).T.astype(np.float64)
+    rgb = None
+    if colours and {"red", "green", "blue"}.issubset(set(las.point_format.dimension_names)):
+        rgb = np.vstack([las.red, las.green, las.blue]).T.astype(np.float64)
+        if rgb.max() > 300:                                  # 16-bit colour -> 8-bit
+            rgb /= 256.0
+        rgb = rgb.clip(0, 255).astype(np.uint8)
     up_cfg = str(fpc.get("up_axis", "auto")).lower()
     up = PointCloudPlan._detect_up_axis(pts) if up_cfg == "auto" else _AXIS[up_cfg]
     fa, fb = [a for a in (0, 1, 2) if a != up]
@@ -245,7 +253,8 @@ def load_scan_points(cfg):
     low = h[h <= np.percentile(h, 10)]
     hist, edges = np.histogram(low, bins=np.arange(low.min(), low.max() + 0.02, 0.02))
     floor = edges[int(np.argmax(hist))] + 0.01
-    return np.column_stack([fx - xlo, fy - ylo, h - floor])
+    points = np.column_stack([fx - xlo, fy - ylo, h - floor])
+    return (points, rgb) if colours else points
 
 
 def _configure_valid_area(plan, fpc):
