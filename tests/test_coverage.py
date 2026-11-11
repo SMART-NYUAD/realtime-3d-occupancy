@@ -161,6 +161,14 @@ class TestSearch(unittest.TestCase):
         np.testing.assert_array_equal(worst, np.minimum(st["seated"], st["standing"]))
         self.assertAlmostEqual(both.cell_area, grid.cell_area / 2)
 
+    def test_point_set_rates_points_like_the_grid(self):
+        occ = cov.Occupancy(room_points())
+        grid = cov.FloorGrid(_Plan(), 0.5)
+        cams = [camera_at([0.25, 0.25, 2.5], [3, 3, 0.8]), camera_at([5.75, 0.25, 2.5], [3, 3, 0.8])]
+        on_grid = cov.Planner(cams, grid, occ, "both")
+        points = cov.Planner(cams, cov.PointSet(grid.xy[::-1]), occ, "both")
+        np.testing.assert_array_equal(points.status, on_grid.status.reshape(2, -1)[:, ::-1].ravel())
+
 
 class TestWeights(unittest.TestCase):
     def test_weights_take_largest_and_change_the_ranking(self):
@@ -461,6 +469,32 @@ class TestRealScan(unittest.TestCase):
             cams = plan["layouts"][0]["cameras"]
             self.assertEqual(len(cams), 4)
             self.assertEqual(sum(c["kept"] for c in cams), 3)
+
+    def test_test_points_cli_rates_points_and_draws_maps(self):
+        layout = ROOT / "docs/coverage/camera_count/2_cameras/layout_plan.json"
+        with tempfile.TemporaryDirectory() as out:
+            pts = os.path.join(out, "points.json")
+            with open(pts, "w") as f:
+                json.dump({"points": [{"id": "P01", "x": 2.5, "y": 2.75, "kind": "floor"},
+                                      {"id": "P02", "x": 7.75, "y": 1.0, "kind": "floor"},
+                                      {"id": "P03", "x": 3.25, "y": 1.25, "kind": "seat"}],
+                           "anchors": ["P01"], "route": ["P01", "P03"]}, f)
+            r = subprocess.run([sys.executable, "tools/test_points.py", "--points", pts,
+                                "--layout", str(layout), "--out", out],
+                               cwd=ROOT, capture_output=True, text=True, timeout=300)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            for name in ("test_points.jpg", "test_points_2_cameras.jpg"):
+                self.assertTrue(os.path.exists(os.path.join(out, name)), name)
+            with open(os.path.join(out, "test_points.json")) as f:
+                got = json.load(f)
+            middle, corner = (got["points"][k]["predicted"]["2_cameras"] for k in (0, 1))
+            for p in ("seated", "standing"):        # mid-room is seen by both; the far corner by none
+                self.assertEqual(middle[p]["rating"], "good")
+                self.assertEqual(len(middle[p]["cameras"]), 2)
+                self.assertGreaterEqual(middle[p]["widest_crossing_deg"], 25)
+                self.assertEqual(corner[p]["rating"], "unseen")
+                self.assertEqual(corner[p]["cameras"], [])
+            self.assertAlmostEqual(got["route_length_m"], 1.68, places=2)
 
     def test_layout_cli_with_mount_lines(self):
         with tempfile.TemporaryDirectory() as out:

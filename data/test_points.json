@@ -1,0 +1,28 @@
+{
+  "note": "Fixed test points for the camera-count validation study, in lab map metres (the planner's and tracker's frame). Seat points are rough desk-chair positions: measure each real chair spot, update x and y here, and rerun tools/test_points.py before taping. Floor points: stand, then sit on a stool. Seats: sit at the desk as when working, then stand beside the chair.",
+  "points": [
+    {"id": "P01", "x": 5.25, "y": 1.25, "kind": "floor"},
+    {"id": "P02", "x": 6.25, "y": 1.25, "kind": "floor"},
+    {"id": "P03", "x": 7.0, "y": 1.25, "kind": "floor"},
+    {"id": "P04", "x": 1.0, "y": 1.25, "kind": "seat"},
+    {"id": "P05", "x": 3.25, "y": 1.25, "kind": "seat"},
+    {"id": "P06", "x": 4.75, "y": 2.0, "kind": "floor"},
+    {"id": "P07", "x": 2.5, "y": 2.75, "kind": "floor"},
+    {"id": "P08", "x": 6.0, "y": 3.0, "kind": "floor"},
+    {"id": "P09", "x": 7.0, "y": 2.25, "kind": "floor"},
+    {"id": "P10", "x": 4.25, "y": 4.0, "kind": "floor"},
+    {"id": "P11", "x": 7.25, "y": 4.5, "kind": "seat"},
+    {"id": "P12", "x": 2.5, "y": 6.25, "kind": "floor"},
+    {"id": "P13", "x": 4.5, "y": 7.5, "kind": "seat"},
+    {"id": "P14", "x": 7.0, "y": 7.5, "kind": "seat"},
+    {"id": "P15", "x": 6.25, "y": 8.0, "kind": "floor"},
+    {"id": "P16", "x": 1.25, "y": 8.25, "kind": "floor"},
+    {"id": "P17", "x": 2.5, "y": 8.5, "kind": "floor"},
+    {"id": "P18", "x": 7.0, "y": 9.0, "kind": "seat"},
+    {"id": "P19", "x": 1.0, "y": 9.75, "kind": "floor"},
+    {"id": "P20", "x": 3.0, "y": 9.75, "kind": "floor"}
+  ],
+  "anchors": ["P07", "P08", "P15", "P17"],
+  "second_person": ["P02", "P05", "P09", "P10", "P13", "P16", "P20"],
+  "route": ["P02", "P01", "P06", "P07", "P10", "P12", "P16", "P17", "P20", "P19"]
+}

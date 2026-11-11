@@ -146,6 +146,18 @@ class FloorGrid:
         return self.cell ** 2
 
 
+class PointSet(FloorGrid):
+    """Floor spots given directly, such as taped test points, usable wherever a
+    FloorGrid is (areas then count each spot as one cell)."""
+
+    def __init__(self, xy, cell=0.25):
+        self.cell = float(cell)
+        self.xy = np.asarray(xy, float).reshape(-1, 2)
+        self.on_furniture = np.zeros(len(self.xy), bool)
+        self.furniture_xy = np.zeros((0, 2))
+        self.weight = np.ones(len(self.xy))
+
+
 def fov_radius(lens):
     """Largest normalized image radius the picture reaches (its corners)."""
     w, h = lens.image_size

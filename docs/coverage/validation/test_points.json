@@ -1,0 +1,1452 @@
+{
+  "note": "Fixed test points for the camera-count validation study, in lab map metres (the planner's and tracker's frame). Seat points are rough desk-chair positions: measure each real chair spot, update x and y here, and rerun tools/test_points.py before taping. Floor points: stand, then sit on a stool. Seats: sit at the desk as when working, then stand beside the chair.",
+  "points": [
+    {
+      "id": "P01",
+      "x": 5.25,
+      "y": 1.25,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 7.72,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 7.67,
+            "same_rating_nearby": 7
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 6.78,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 6.73,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 82.4,
+            "nearest_camera_m": 1.75,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 70.2,
+            "nearest_camera_m": 6.73,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P02",
+      "x": 6.25,
+      "y": 1.25,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 5
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 4
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 4
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 4
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "C"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.18,
+            "same_rating_nearby": 3
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "C"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.14,
+            "same_rating_nearby": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "P03",
+      "x": 7.0,
+      "y": 1.25,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 5
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 7
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 5
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "P04",
+      "x": 1.0,
+      "y": 1.25,
+      "kind": "seat",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 3.48,
+            "same_rating_nearby": 3
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 3.39,
+            "same_rating_nearby": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "P05",
+      "x": 3.25,
+      "y": 1.25,
+      "kind": "seat",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.65,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.62,
+            "same_rating_nearby": 6
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 55.1,
+            "nearest_camera_m": 7.83,
+            "same_rating_nearby": 6
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 55.1,
+            "nearest_camera_m": 7.78,
+            "same_rating_nearby": 7
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 88.0,
+            "nearest_camera_m": 1.69,
+            "same_rating_nearby": 4
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 88.0,
+            "nearest_camera_m": 1.49,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P06",
+      "x": 4.75,
+      "y": 2.0,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 33.3,
+            "nearest_camera_m": 7.25,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 33.3,
+            "nearest_camera_m": 7.2,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 59.8,
+            "nearest_camera_m": 6.37,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 59.8,
+            "nearest_camera_m": 6.31,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 78.8,
+            "nearest_camera_m": 6.37,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 78.8,
+            "nearest_camera_m": 6.31,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P07",
+      "x": 2.5,
+      "y": 2.75,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 34.4,
+            "nearest_camera_m": 7.88,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 34.4,
+            "nearest_camera_m": 7.84,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 64.9,
+            "nearest_camera_m": 7.15,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 64.9,
+            "nearest_camera_m": 7.1,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 87.2,
+            "nearest_camera_m": 3.08,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 87.2,
+            "nearest_camera_m": 2.98,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P08",
+      "x": 6.0,
+      "y": 3.0,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 37.0,
+            "nearest_camera_m": 5.84,
+            "same_rating_nearby": 6
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 37.0,
+            "nearest_camera_m": 5.79,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 64.3,
+            "nearest_camera_m": 4.92,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 64.3,
+            "nearest_camera_m": 4.85,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 85.9,
+            "nearest_camera_m": 4.92,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 85.9,
+            "nearest_camera_m": 4.85,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P09",
+      "x": 7.0,
+      "y": 2.25,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.79,
+            "same_rating_nearby": 4
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.75,
+            "same_rating_nearby": 4
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 5
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 2
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "C"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.21,
+            "same_rating_nearby": 6
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "C"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 8.17,
+            "same_rating_nearby": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "P10",
+      "x": 4.25,
+      "y": 4.0,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 44.3,
+            "nearest_camera_m": 5.91,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 44.3,
+            "nearest_camera_m": 5.85,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 81.2,
+            "nearest_camera_m": 5.2,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 81.2,
+            "nearest_camera_m": 5.13,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 78.1,
+            "nearest_camera_m": 3.74,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 78.1,
+            "nearest_camera_m": 3.65,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P11",
+      "x": 7.25,
+      "y": 4.5,
+      "kind": "seat",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 4.1,
+            "same_rating_nearby": 4
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 6.82,
+            "same_rating_nearby": 4
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 68.5,
+            "nearest_camera_m": 3.15,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C"
+            ],
+            "widest_crossing_deg": 68.5,
+            "nearest_camera_m": 3.04,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 88.4,
+            "nearest_camera_m": 1.85,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 88.4,
+            "nearest_camera_m": 1.68,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P12",
+      "x": 2.5,
+      "y": 6.25,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 50.4,
+            "nearest_camera_m": 4.58,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 50.4,
+            "nearest_camera_m": 4.49,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 77.3,
+            "nearest_camera_m": 2.48,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 77.3,
+            "nearest_camera_m": 2.34,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 84.2,
+            "nearest_camera_m": 2.75,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 84.2,
+            "nearest_camera_m": 2.62,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P13",
+      "x": 4.5,
+      "y": 7.5,
+      "kind": "seat",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 3.22,
+            "same_rating_nearby": 4
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 87.9,
+            "nearest_camera_m": 3.1,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 65.1,
+            "nearest_camera_m": 4.42,
+            "same_rating_nearby": 6
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 65.1,
+            "nearest_camera_m": 3.71,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 74.2,
+            "nearest_camera_m": 4.73,
+            "same_rating_nearby": 3
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 74.2,
+            "nearest_camera_m": 4.66,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P14",
+      "x": 7.0,
+      "y": 7.5,
+      "kind": "seat",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 80.4,
+            "nearest_camera_m": 1.83,
+            "same_rating_nearby": 2
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 80.4,
+            "nearest_camera_m": 1.63,
+            "same_rating_nearby": 5
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "C"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 6.65,
+            "same_rating_nearby": 1
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 41.7,
+            "nearest_camera_m": 6.6,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "C"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 7.13,
+            "same_rating_nearby": 5
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 87.2,
+            "nearest_camera_m": 4.49,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P15",
+      "x": 6.25,
+      "y": 8.0,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 56.0,
+            "nearest_camera_m": 2.23,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 56.0,
+            "nearest_camera_m": 2.07,
+            "same_rating_nearby": 7
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 46.2,
+            "nearest_camera_m": 5.8,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 46.2,
+            "nearest_camera_m": 5.74,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 85.5,
+            "nearest_camera_m": 5.22,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 85.5,
+            "nearest_camera_m": 5.16,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P16",
+      "x": 1.25,
+      "y": 8.25,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 6.95,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "A"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 6.9,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 3.62,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "one camera",
+            "cameras": [
+              "B"
+            ],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": 3.52,
+            "same_rating_nearby": 6
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 86.0,
+            "nearest_camera_m": 2.5,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 86.0,
+            "nearest_camera_m": 2.35,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P17",
+      "x": 2.5,
+      "y": 8.5,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 54.3,
+            "nearest_camera_m": 2.71,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "B"
+            ],
+            "widest_crossing_deg": 54.3,
+            "nearest_camera_m": 2.58,
+            "same_rating_nearby": 6
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 82.2,
+            "nearest_camera_m": 2.37,
+            "same_rating_nearby": 6
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 82.2,
+            "nearest_camera_m": 2.21,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "D"
+            ],
+            "widest_crossing_deg": 33.4,
+            "nearest_camera_m": 7.65,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "D"
+            ],
+            "widest_crossing_deg": 33.4,
+            "nearest_camera_m": 7.61,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P18",
+      "x": 7.0,
+      "y": 9.0,
+      "kind": "seat",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 39.2,
+            "nearest_camera_m": 6.34,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 39.2,
+            "nearest_camera_m": 6.29,
+            "same_rating_nearby": 8
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 78.3,
+            "nearest_camera_m": 6.0,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 78.3,
+            "nearest_camera_m": 5.95,
+            "same_rating_nearby": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "P19",
+      "x": 1.0,
+      "y": 9.75,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 5
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 6
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 6
+          }
+        }
+      }
+    },
+    {
+      "id": "P20",
+      "x": 3.0,
+      "y": 9.75,
+      "kind": "floor",
+      "predicted": {
+        "2_cameras": {
+          "seated": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          },
+          "standing": {
+            "rating": "unseen",
+            "cameras": [],
+            "widest_crossing_deg": null,
+            "nearest_camera_m": null,
+            "same_rating_nearby": 8
+          }
+        },
+        "3_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 61.5,
+            "nearest_camera_m": 2.53,
+            "same_rating_nearby": 7
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "B",
+              "C"
+            ],
+            "widest_crossing_deg": 61.5,
+            "nearest_camera_m": 2.39,
+            "same_rating_nearby": 7
+          }
+        },
+        "4_cameras": {
+          "seated": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "D"
+            ],
+            "widest_crossing_deg": 27.6,
+            "nearest_camera_m": 5.79,
+            "same_rating_nearby": 5
+          },
+          "standing": {
+            "rating": "good",
+            "cameras": [
+              "A",
+              "C",
+              "D"
+            ],
+            "widest_crossing_deg": 78.2,
+            "nearest_camera_m": 4.52,
+            "same_rating_nearby": 6
+          }
+        }
+      }
+    }
+  ],
+  "anchors": [
+    "P07",
+    "P08",
+    "P15",
+    "P17"
+  ],
+  "second_person": [
+    "P02",
+    "P05",
+    "P09",
+    "P10",
+    "P13",
+    "P16",
+    "P20"
+  ],
+  "route": [
+    "P02",
+    "P01",
+    "P06",
+    "P07",
+    "P10",
+    "P12",
+    "P16",
+    "P17",
+    "P20",
+    "P19"
+  ],
+  "route_length_m": 16.25,
+  "layouts": {
+    "2_cameras": "docs/coverage/camera_count/2_cameras/layout_plan.json",
+    "3_cameras": "docs/coverage/camera_count/3_cameras/layout_plan.json",
+    "4_cameras": "docs/coverage/camera_count/4_cameras/layout_plan.json"
+  },
+  "settings": {
+    "min_angle_deg": 25.0,
+    "max_range_m": 9.0,
+    "postures_m": {
+      "seated": {
+        "shoulder": 1.05,
+        "head": 1.3
+      },
+      "standing": {
+        "shoulder": 1.4,
+        "head": 1.62
+      }
+    }
+  }
+}
